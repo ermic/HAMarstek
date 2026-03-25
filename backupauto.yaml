@@ -1,0 +1,127 @@
+alias: Marstek Nul op de Meter
+id: marstek_nul_op_de_meter
+description: >
+  Regelt laden/ontladen van de thuisbatterij voor zero import van het net.
+  SoC nooit onder 10%. Update elke 15 seconden.
+
+trigger:
+  - platform: time_pattern
+    seconds: "/15"
+  - platform: state
+    entity_id: sensor.connect_energiemeter_electricity_consumption
+  - platform: state
+    entity_id: sensor.envoy_122250110136_current_power_production
+
+condition:
+  - condition: state
+    entity_id: input_boolean.marstek_nul_op_de_meter_actief
+    state: "on"
+  - condition: template
+    value_template: >
+      {{ states('sensor.connect_energiemeter_electricity_consumption') not in ['unavailable', 'unknown'] }}
+
+variables:
+  verbruik: "{{ states('sensor.connect_energiemeter_electricity_consumption') | float(0) }}"
+  soc: "{{ states('sensor.marstek_venus_modbus_battery_soc') | float(0) }}"
+  deadband: "{{ states('input_number.marstek_zero_export_deadband') | float(50) }}"
+  max_charge: "{{ states('input_number.marstek_zero_export_max_charge') | float(1268) }}"
+  max_discharge: "{{ states('input_number.marstek_zero_export_max_discharge') | float(1363) }}"
+
+action:
+  - choose:
+
+      # Batterijbescherming: SoC onder 10% — alles stoppen
+      - conditions:
+          - condition: template
+            value_template: "{{ soc < 10.1 }}"
+        sequence:
+          - service: select.select_option
+            target:
+              entity_id: select.marstek_venus_modbus_user_work_mode
+            data:
+              option: anti_feed
+          - service: number.set_value
+            target:
+              entity_id: number.marstek_venus_modbus_set_discharge_power
+            data:
+              value: 0
+          - service: select.select_option
+            target:
+              entity_id: select.marstek_venus_modbus_force_mode
+            data:
+              option: stop
+
+      # Verbruik van het net: ontlaad batterij om net op 0 te brengen
+      # Kleine overshoot (+50W) om oscillatie te voorkomen en echt op 0 te komen
+      - conditions:
+          - condition: template
+            value_template: "{{ verbruik > deadband }}"
+        sequence:
+          - variables:
+              doel_ontladen: "{{ [(verbruik + 50) | int, max_discharge | int] | min }}"
+          - service: select.select_option
+            target:
+              entity_id: select.marstek_venus_modbus_user_work_mode
+            data:
+              option: manual
+          - service: number.set_value
+            target:
+              entity_id: number.marstek_venus_modbus_max_discharge_power
+            data:
+              value: "{{ doel_ontladen }}"
+          - service: number.set_value
+            target:
+              entity_id: number.marstek_venus_modbus_set_discharge_power
+            data:
+              value: "{{ doel_ontladen }}"
+          - service: select.select_option
+            target:
+              entity_id: select.marstek_venus_modbus_force_mode
+            data:
+              option: discharge
+
+      # Overproductie zonnepanelen: laad batterij met overschot
+      - conditions:
+          - condition: template
+            value_template: "{{ verbruik < (deadband * -1) }}"
+          - condition: template
+            value_template: "{{ soc < 100 }}"
+        sequence:
+          - variables:
+              doel_laden: "{{ [verbruik | abs | int, max_charge | int] | min }}"
+          - service: select.select_option
+            target:
+              entity_id: select.marstek_venus_modbus_user_work_mode
+            data:
+              option: manual
+          - service: number.set_value
+            target:
+              entity_id: number.marstek_venus_modbus_max_charge_power
+            data:
+              value: "{{ doel_laden }}"
+          - service: number.set_value
+            target:
+              entity_id: number.marstek_venus_modbus_set_charge_power
+            data:
+              value: "{{ doel_laden }}"
+          - service: select.select_option
+            target:
+              entity_id: select.marstek_venus_modbus_force_mode
+            data:
+              option: charge
+
+    # Binnen deadband of batterij vol: terug naar anti_feed
+    default:
+      - service: select.select_option
+        target:
+          entity_id: select.marstek_venus_modbus_user_work_mode
+        data:
+          option: anti_feed
+      - service: select.select_option
+        target:
+          entity_id: select.marstek_venus_modbus_force_mode
+        data:
+          option: stop
+
+mode: single
+max_exceeded: silent

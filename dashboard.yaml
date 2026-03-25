@@ -1,0 +1,220 @@
+title: Marstek Energie
+views:
+  - title: Batterij & Energie
+    path: marstek
+    icon: mdi:battery-charging
+    cards:
+
+      # ── BATTERIJ STATUS ──────────────────────────────────────────────────────
+      - type: vertical-stack
+        cards:
+          - type: markdown
+            content: "## Batterij Status"
+
+          - type: gauge
+            entity: sensor.marstek_venus_modbus_battery_soc
+            name: Batterij laadstatus
+            unit: "%"
+            min: 0
+            max: 100
+            needle: true
+            severity:
+              red: 0
+              yellow: 20
+              green: 50
+
+          - type: horizontal-stack
+            cards:
+              - type: entity
+                entity: sensor.marstek_venus_modbus_stored_energy
+                name: Opgeslagen
+                icon: mdi:battery-high
+
+              - type: entity
+                entity: sensor.marstek_venus_modbus_battery_power
+                name: Batterijvermogen
+                icon: mdi:lightning-bolt
+
+              - type: entity
+                entity: sensor.marstek_venus_modbus_inverter_state
+                name: Inverterstatus
+                icon: mdi:state-machine
+
+      # ── STROOM OVERZICHT ─────────────────────────────────────────────────────
+      - type: vertical-stack
+        cards:
+          - type: markdown
+            content: "## Stroom Overzicht"
+
+          - type: horizontal-stack
+            cards:
+              - type: entity
+                entity: sensor.marstek_ct_4de1_battery_e3e9_phase_a_power
+                name: Net vermogen
+                icon: mdi:transmission-tower
+
+              - type: entity
+                entity: sensor.envoy_122250110136_current_power_production
+                name: Zonnepanelen
+                icon: mdi:solar-power
+
+
+      # ── NUL OP DE METER BEDIENING ────────────────────────────────────────────
+      - type: vertical-stack
+        cards:
+          - type: markdown
+            content: "## Nul op de Meter"
+
+          - type: entities
+            entities:
+              - entity: input_boolean.marstek_nul_op_de_meter_actief
+                name: Nul op de meter actief
+                toggle: true
+
+              - entity: sensor.marstek_zero_export_action
+                name: Huidige actie
+
+              - entity: sensor.marstek_zero_exporter
+                name: Zero export vermogen
+
+              - entity: input_number.marstek_zero_export_deadband
+                name: Deadband (W)
+
+      # ── MODBUS INSTELLINGEN ───────────────────────────────────────────────────
+      - type: vertical-stack
+        cards:
+          - type: markdown
+            content: "## Batterij Instellingen"
+
+          - type: entities
+            entities:
+              - entity: select.marstek_venus_modbus_force_mode
+                name: Forceer modus
+
+              - entity: select.marstek_venus_modbus_user_work_mode
+                name: Werkmodus
+
+              - entity: number.marstek_venus_modbus_max_charge_power
+                name: Max laadvermogen (W)
+
+              - entity: number.marstek_venus_modbus_max_discharge_power
+                name: Max ontlaadvermogen (W)
+
+              - entity: number.marstek_venus_modbus_set_charge_power
+                name: Huidig laadvermogen (W)
+
+              - entity: number.marstek_venus_modbus_set_discharge_power
+                name: Huidig ontlaadvermogen (W)
+
+              - entity: number.marstek_venus_modbus_charge_to_soc
+                name: Laden tot SoC (%)
+
+      # ── GRAFIEKEN ────────────────────────────────────────────────────────────
+      - type: history-graph
+        title: Batterij SoC (24u)
+        hours_to_show: 24
+        refresh_interval: 60
+        entities:
+          - entity: sensor.marstek_venus_modbus_battery_soc
+            name: SoC %
+
+      - type: history-graph
+        title: Vermogen (24u)
+        hours_to_show: 24
+        refresh_interval: 60
+        entities:
+          - entity: sensor.marstek_ct_4de1_battery_e3e9_phase_a_power
+            name: Net
+          - entity: sensor.marstek_venus_modbus_battery_power
+            name: Batterij
+          - entity: sensor.marstek_venus_modbus_ac_power
+            name: AC
+
+      # ── ENERGIE VANDAAG ───────────────────────────────────────────────────────
+      - type: vertical-stack
+        cards:
+          - type: markdown
+            content: "## Energie Vandaag"
+
+          - type: horizontal-stack
+            cards:
+              - type: entity
+                entity: sensor.marstek_venus_modbus_daily_charging_energy
+                name: Geladen
+                icon: mdi:battery-arrow-up
+
+              - type: entity
+                entity: sensor.marstek_venus_modbus_daily_discharging_energy
+                name: Ontladen
+                icon: mdi:battery-arrow-down
+
+              - type: entity
+                entity: sensor.envoy_122250110136_energy_production_today
+                name: Zon opbrengst
+                icon: mdi:solar-panel
+
+          - type: horizontal-stack
+            cards:
+              - type: entity
+                entity: sensor.zonneplan_electricity_consumption_today
+                name: Verbruik vandaag
+
+              - type: entity
+                entity: sensor.zonneplan_electricity_returned_today
+                name: Teruggeleverd
+
+              - type: entity
+                entity: sensor.zonneplan_current_electricity_tariff
+                name: Huidig tarief
+                icon: mdi:cash
+
+      # ── SYSTEEM STATUS ────────────────────────────────────────────────────────
+      - type: vertical-stack
+        cards:
+          - type: markdown
+            content: "## Systeem Status"
+
+          - type: horizontal-stack
+            cards:
+              - type: entity
+                entity: sensor.marstek_venus_modbus_internal_temperature
+                name: Temp intern
+
+              - type: entity
+                entity: sensor.marstek_venus_modbus_conversion_efficiency
+                name: Efficiëntie
+
+              - type: entity
+                entity: sensor.marstek_venus_modbus_battery_voltage
+                name: Batterijspanning
+
+          - type: horizontal-stack
+            cards:
+              - type: entity
+                entity: binary_sensor.marstek_venuse_3_0_charging_enabled
+                name: Laden actief
+
+              - type: entity
+                entity: binary_sensor.marstek_venuse_3_0_discharging_enabled
+                name: Ontladen actief
+
+              - type: entity
+                entity: binary_sensor.marstek_venus_modbus_wifi_status
+                name: WiFi
+
+          - type: horizontal-stack
+            cards:
+              - type: entity
+                entity: sensor.marstek_venuse_3_0_error_code
+                name: Foutcode (BLE)
+                icon: mdi:alert-circle-outline
+
+              - type: entity
+                entity: sensor.marstek_venuse_3_0_state
+                name: Toestand (BLE)
+                icon: mdi:state-machine
+
+              - type: entity
+                entity: select.marstek_venuse_3_0_operating_mode
+                name: Modus (BLE)
+                icon: mdi:cog

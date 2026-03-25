@@ -1,0 +1,54 @@
+# Input helpers voor Marstek nul-op-de-meter automation
+# Voeg toe aan configuration.yaml:
+#   input_boolean: !include input_helpers_boolean.yaml
+#   input_number: !include input_helpers_number.yaml
+# Of plak de secties direct in je bestaande input_boolean / input_number blokken.
+
+input_boolean:
+  marstek_nul_op_de_meter_actief:
+    name: Marstek nul-op-de-meter actief
+    icon: mdi:home-lightning-bolt
+
+input_number:
+  marstek_zero_export_deadband:
+    name: Marstek deadband
+    icon: mdi:approximately-equal
+    min: 0
+    max: 300
+    step: 10
+    unit_of_measurement: W
+    mode: slider
+
+  marstek_zero_export_max_charge:
+    name: Marstek laden
+    icon: mdi:battery-arrow-up
+    min: 0
+    max: 2500
+    step: 50
+    unit_of_measurement: W
+    mode: slider
+
+  marstek_zero_export_max_discharge:
+    name: Marstek max ontladen
+    icon: mdi:battery-arrow-down
+    min: 0
+    max: 2500
+    step: 50
+    unit_of_measurement: W
+    mode: slider
+
+  marstek_ramp_discharge:
+    name: Marstek ramp ontladen
+    min: 0
+    max: 2500
+    step: 1
+    unit_of_measurement: W
+    mode: box
+
+  marstek_ramp_charge:
+    name: Marstek ramp laden
+    min: 0
+    max: 2500
+    step: 1
+    unit_of_measurement: W
+    mode: box

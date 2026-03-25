@@ -1,0 +1,17 @@
+{
+  "name": "marstek-v3",
+  "version": "1.0.0",
+  "description": "CLI client for Marstek V3 battery over UDP/JSON",
+  "bin": {
+    "marstek": "./app.js"
+  },
+  "main": "./app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "keywords": ["marstek", "battery", "udp", "cli"],
+  "license": "MIT",
+  "engines": {
+    "node": ">=14"
+  }
+}

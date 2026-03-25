@@ -1,0 +1,146 @@
+alias: Marstek Nul op de Meter
+id: marstek_nul_op_de_meter
+description: >
+  Regelt laden/ontladen van de thuisbatterij voor zero import van het net.
+  CT sensor voor snel meting. SoC nooit onder 10%. Update elke 15 seconden.
+
+trigger:
+  - platform: time_pattern
+    seconds: "/15"
+
+condition:
+  - condition: state
+    entity_id: input_boolean.marstek_nul_op_de_meter_actief
+    state: "on"
+  - condition: template
+    value_template: >
+      {{ states('sensor.marstek_ct_4de1_battery_e3e9_phase_a_power') not in ['unavailable', 'unknown'] }}
+
+variables:
+  verbruik: "{{ states('sensor.marstek_ct_4de1_battery_e3e9_phase_a_power') | float(0) }}"
+  soc: "{{ states('sensor.marstek_venus_modbus_battery_soc') | float(0) }}"
+  deadband: "{{ states('input_number.marstek_zero_export_deadband') | float(50) }}"
+  max_charge: "{{ states('input_number.marstek_zero_export_max_charge') | float(1268) }}"
+  max_discharge: "{{ states('input_number.marstek_zero_export_max_discharge') | float(1363) }}"
+
+action:
+  - choose:
+
+      # Batterijbescherming: SoC onder 10%
+      - conditions:
+          - condition: template
+            value_template: "{{ soc < 10.1 }}"
+        sequence:
+          - service: select.select_option
+            target:
+              entity_id: select.marstek_venus_modbus_user_work_mode
+            data:
+              option: anti_feed
+          - service: number.set_value
+            target:
+              entity_id: number.marstek_venus_modbus_set_discharge_power
+            data:
+              value: 0
+          - service: number.set_value
+            target:
+              entity_id: number.marstek_venus_modbus_max_discharge_power
+            data:
+              value: 0
+          - service: select.select_option
+            target:
+              entity_id: select.marstek_venus_modbus_force_mode
+            data:
+              option: stop
+
+      # CT negatief = overschot zonnepanelen: laad batterij
+      - conditions:
+          - condition: template
+            value_template: "{{ verbruik < -deadband and soc < 100 }}"
+        sequence:
+          - variables:
+              doel_laden: "{{ [verbruik | abs | int, max_charge | int] | min }}"
+          - service: select.select_option
+            target:
+              entity_id: select.marstek_venus_modbus_user_work_mode
+            data:
+              option: manual
+          - service: number.set_value
+            target:
+              entity_id: number.marstek_venus_modbus_max_charge_power
+            data:
+              value: "{{ doel_laden }}"
+          - service: number.set_value
+            target:
+              entity_id: number.marstek_venus_modbus_set_charge_power
+            data:
+              value: "{{ doel_laden }}"
+          - if:
+              - condition: template
+                value_template: "{{ states('sensor.marstek_venus_modbus_inverter_state') == 'Bypass' }}"
+            then:
+              - service: select.select_option
+                target:
+                  entity_id: select.marstek_venus_modbus_force_mode
+                data:
+                  option: stop
+              - delay:
+                  seconds: 2
+          - service: select.select_option
+            target:
+              entity_id: select.marstek_venus_modbus_force_mode
+            data:
+              option: charge
+
+      # CT positief = import van net: ontlaad batterij
+      - conditions:
+          - condition: template
+            value_template: "{{ verbruik > deadband }}"
+        sequence:
+          - variables:
+              doel_ontladen: "{{ [(verbruik + 100) | int, max_discharge | int] | min }}"
+          - service: select.select_option
+            target:
+              entity_id: select.marstek_venus_modbus_user_work_mode
+            data:
+              option: manual
+          - service: number.set_value
+            target:
+              entity_id: number.marstek_venus_modbus_max_discharge_power
+            data:
+              value: "{{ doel_ontladen }}"
+          - service: number.set_value
+            target:
+              entity_id: number.marstek_venus_modbus_set_discharge_power
+            data:
+              value: "{{ doel_ontladen }}"
+          - service: select.select_option
+            target:
+              entity_id: select.marstek_venus_modbus_force_mode
+            data:
+              option: discharge
+
+    # Binnen deadband: powers op 0, geen force_mode wijziging
+    default:
+      - service: number.set_value
+        target:
+          entity_id: number.marstek_venus_modbus_max_charge_power
+        data:
+          value: 0
+      - service: number.set_value
+        target:
+          entity_id: number.marstek_venus_modbus_set_charge_power
+        data:
+          value: 0
+      - service: number.set_value
+        target:
+          entity_id: number.marstek_venus_modbus_max_discharge_power
+        data:
+          value: 0
+      - service: number.set_value
+        target:
+          entity_id: number.marstek_venus_modbus_set_discharge_power
+        data:
+          value: 0
+
+mode: single
+max_exceeded: silent
