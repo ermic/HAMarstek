@@ -1,0 +1,59 @@
+id: marstek_v3_avond_tarief_niet_hoog
+alias: "Marstek v3 – Stop Verkoop Bij Dalend Avondtarief"
+description: "Bouwt vermogen geleidelijk af (ramp) en stopt daarna de verkoop als tarief daalt."
+mode: single
+
+trigger:
+  - platform: state
+    entity_id: sensor.zonneplan_current_tariff_group
+    to: "normal"
+    for:
+      seconds: 60
+  - platform: state
+    entity_id: sensor.zonneplan_current_tariff_group
+    to: "low"
+    for:
+      seconds: 60
+
+condition:
+  - condition: time
+    after: "19:30:00"
+    before: "23:59:00"
+  - condition: template
+    value_template: "{{ states('select.marstek_venus_modbus_force_mode') == 'discharge' }}"
+
+action:
+  - service: system_log.write
+    data:
+      message: "Marstek v3: Verkoop ramp omlaag, tarief={{ states('sensor.zonneplan_current_tariff_group') }} ({{ states('sensor.zonneplan_current_electricity_tariff') | float(0) | round(3) }} EUR/kWh)"
+      level: info
+  # Ramp omlaag: 200W per stap elke 5 seconden
+  - repeat:
+      while:
+        - condition: template
+          value_template: "{{ states('number.marstek_venus_modbus_set_discharge_power') | int(0) > 0 }}"
+        - condition: template
+          value_template: "{{ states('select.marstek_venus_modbus_force_mode') == 'discharge' }}"
+      sequence:
+        - service: number.set_value
+          target:
+            entity_id: number.marstek_venus_modbus_set_discharge_power
+          data:
+            value: "{{ [states('number.marstek_venus_modbus_set_discharge_power') | int(0) - 200, 0] | max }}"
+        - delay:
+            seconds: 5
+  # Dan pas stoppen
+  - service: select.select_option
+    target:
+      entity_id: select.marstek_venus_modbus_force_mode
+    data:
+      option: stop
+  - service: select.select_option
+    target:
+      entity_id: select.marstek_venus_modbus_user_work_mode
+    data:
+      option: anti_feed
+  - service: system_log.write
+    data:
+      message: "Marstek v3: Verkoop volledig gestopt, terug naar anti_feed"
+      level: info

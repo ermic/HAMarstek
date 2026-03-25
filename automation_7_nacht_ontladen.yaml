@@ -1,0 +1,54 @@
+id: marstek_v3_nacht_ontladen
+alias: "Marstek v3 – Nacht Ontladen 250W (zomer)"
+description: >
+  Ontlaadt de batterij met 250W tussen 00:00 en 08:00.
+  Alleen actief in de zomer (maart t/m september) omdat de zon
+  de batterij de volgende dag weer aanvult.
+  In de winter (oktober t/m maart) is nacht-ontladen uitgeschakeld
+  zodat de batterij beschikbaar blijft voor de avondpiek.
+  Stopt bij SoC onder 10%.
+mode: single
+max_exceeded: silent
+
+trigger:
+  - platform: time
+    at: "00:00:00"
+  - platform: time_pattern
+    minutes: /5
+
+condition:
+  # Alleen tussen middernacht en 08:00
+  - condition: time
+    after: "00:00:00"
+    before: "08:00:00"
+  # Alleen in zomermaanden: maart (3) t/m september (9)
+  - condition: template
+    value_template: "{{ now().month >= 3 and now().month <= 9 }}"
+  # Minimale SoC bewaken
+  - condition: numeric_state
+    entity_id: sensor.marstek_venus_modbus_battery_soc
+    above: 10
+  # RS485 moet actief zijn
+  - condition: state
+    entity_id: switch.marstek_venus_modbus_rs485_control_mode
+    state: "on"
+  # Niet ontladen als automation 1 aan het laden is (goedkoop nachttarief)
+  - condition: template
+    value_template: "{{ states('sensor.zonneplan_current_tariff_group') != 'low' }}"
+
+action:
+  - service: select.select_option
+    target:
+      entity_id: select.marstek_venus_modbus_force_mode
+    data:
+      option: discharge
+  - service: number.set_value
+    target:
+      entity_id: number.marstek_venus_modbus_set_discharge_power
+    data:
+      value: 250
+  - service: number.set_value
+    target:
+      entity_id: number.marstek_venus_modbus_max_discharge_power
+    data:
+      value: 250

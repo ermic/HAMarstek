@@ -1,0 +1,211 @@
+id: marstek_v3_strategie_controller
+alias: "Marstek v3 – Hoofd Strategie Controller"
+description: >
+  Beslist welke batterijmodus actief is op basis van tijd, tarief en SoC.
+  Prioriteit: nacht-laden > avond-verkoop > spitsuur > dag-laden > standaard.
+mode: single
+max_exceeded: silent
+
+trigger:
+  - platform: time_pattern
+    minutes: /2
+  - platform: state
+    entity_id: sensor.zonneplan_current_tariff_group
+    for:
+      seconds: 60
+  - platform: time
+    at: "08:00:00"
+  - platform: time
+    at: "17:00:00"
+  - platform: time
+    at: "19:30:00"
+  - platform: time
+    at: "22:00:00"
+
+action:
+  - if:
+      - condition: state
+        entity_id: switch.marstek_venus_modbus_rs485_control_mode
+        state: "off"
+    then:
+      - service: switch.turn_on
+        target:
+          entity_id: switch.marstek_venus_modbus_rs485_control_mode
+      - delay:
+          seconds: 3
+
+  - variables:
+      soc: "{{ states('sensor.marstek_venus_modbus_battery_soc') | float(0) }}"
+      tarief_groep: "{{ states('sensor.zonneplan_current_tariff_group') | default('normal') }}"
+      tarief_prijs: "{{ states('sensor.zonneplan_current_electricity_tariff') | float(0) }}"
+      zon_elevatie: "{{ states('sensor.sun_solar_elevation') | float(-90) }}"
+      zon_schijnt: "{{ states('sensor.sun_solar_elevation') | float(-90) > 0 }}"
+      net_vermogen: "{{ states('sensor.marstek_ct_4de1_battery_e3e9_total_power') | float(0) }}"
+      is_spitsuur: "{{ (now().hour == 17) or (now().hour == 18) or (now().hour == 19 and now().minute < 30) }}"
+      is_avond: "{{ (now().hour == 19 and now().minute >= 30) or (now().hour >= 20) }}"
+      is_nacht: "{{ (now().hour >= 22) or (now().hour < 8) }}"
+      is_dag: "{{ now().hour >= 8 and now().hour < 17 }}"
+
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ is_nacht and tarief_groep == 'low' and soc < 80 and (now().month < 3 or now().month > 9) }}"
+        sequence:
+          - service: select.select_option
+            target:
+              entity_id: select.marstek_venus_modbus_force_mode
+            data:
+              option: charge
+          - service: number.set_value
+            target:
+              entity_id: number.marstek_venus_modbus_set_charge_power
+            data:
+              value: 2000
+          - service: number.set_value
+            target:
+              entity_id: number.marstek_venus_modbus_max_charge_power
+            data:
+              value: 2000
+          - service: system_log.write
+            data:
+              message: "Marstek v3 NACHT LADEN (winter): tarief={{ tarief_groep }} ({{ tarief_prijs | round(3) }} EUR/kWh), SoC={{ soc }}%"
+              level: info
+
+      - conditions:
+          - condition: template
+            value_template: "{{ is_avond and tarief_groep == 'high' and soc > 80 and not zon_schijnt }}"
+        sequence:
+          - service: select.select_option
+            target:
+              entity_id: select.marstek_venus_modbus_force_mode
+            data:
+              option: discharge
+          - service: number.set_value
+            target:
+              entity_id: number.marstek_venus_modbus_set_discharge_power
+            data:
+              value: 2000
+          - service: number.set_value
+            target:
+              entity_id: number.marstek_venus_modbus_max_discharge_power
+            data:
+              value: 2000
+          - service: system_log.write
+            data:
+              message: "Marstek v3 AVOND VERKOOP: tarief={{ tarief_groep }} ({{ tarief_prijs | round(3) }} EUR/kWh), SoC={{ soc }}%"
+              level: info
+
+      - conditions:
+          - condition: template
+            value_template: "{{ is_avond and soc > 15 }}"
+        sequence:
+          - service: select.select_option
+            target:
+              entity_id: select.marstek_venus_modbus_force_mode
+            data:
+              option: discharge
+          - service: number.set_value
+            target:
+              entity_id: number.marstek_venus_modbus_max_discharge_power
+            data:
+              value: 1200
+          - service: number.set_value
+            target:
+              entity_id: number.marstek_venus_modbus_set_discharge_power
+            data:
+              value: "{{ [[net_vermogen | round(0) | int, 50] | max, 1200] | min }}"
+
+      - conditions:
+          - condition: template
+            value_template: "{{ is_spitsuur }}"
+        sequence:
+          - service: select.select_option
+            target:
+              entity_id: select.marstek_venus_modbus_force_mode
+            data:
+              option: stop
+          - service: select.select_option
+            target:
+              entity_id: select.marstek_venus_modbus_user_work_mode
+            data:
+              option: anti_feed
+          - service: number.set_value
+            target:
+              entity_id: number.marstek_venus_modbus_max_discharge_power
+            data:
+              value: 2500
+          - service: number.set_value
+            target:
+              entity_id: number.marstek_venus_modbus_max_charge_power
+            data:
+              value: 2500
+          - service: system_log.write
+            data:
+              message: "Marstek v3 SPITSUUR: anti_feed actief, max ontladen 2500W, SoC={{ soc }}%, net={{ net_vermogen }}W"
+              level: info
+
+      - conditions:
+          - condition: template
+            value_template: "{{ is_nacht and now().hour < 8 and now().month >= 3 and now().month <= 9 and soc > 10 and tarief_groep != 'low' }}"
+        sequence:
+          - service: select.select_option
+            target:
+              entity_id: select.marstek_venus_modbus_force_mode
+            data:
+              option: discharge
+          - service: number.set_value
+            target:
+              entity_id: number.marstek_venus_modbus_set_discharge_power
+            data:
+              value: 250
+          - service: number.set_value
+            target:
+              entity_id: number.marstek_venus_modbus_max_discharge_power
+            data:
+              value: 250
+
+      - conditions:
+          - condition: template
+            value_template: "{{ is_dag and tarief_groep == 'low' and soc < 70 and zon_elevatie < 10 }}"
+        sequence:
+          - service: select.select_option
+            target:
+              entity_id: select.marstek_venus_modbus_force_mode
+            data:
+              option: charge
+          - service: number.set_value
+            target:
+              entity_id: number.marstek_venus_modbus_set_charge_power
+            data:
+              value: 1500
+          - service: number.set_value
+            target:
+              entity_id: number.marstek_venus_modbus_max_charge_power
+            data:
+              value: 1500
+          - service: system_log.write
+            data:
+              message: "Marstek v3 DAG LADEN (bewolkt): tarief={{ tarief_groep }}, zon={{ zon_elevatie | round(1) }}gr, SoC={{ soc }}%"
+              level: info
+
+    default:
+      - service: select.select_option
+        target:
+          entity_id: select.marstek_venus_modbus_force_mode
+        data:
+          option: stop
+      - service: select.select_option
+        target:
+          entity_id: select.marstek_venus_modbus_user_work_mode
+        data:
+          option: anti_feed
+      - service: number.set_value
+        target:
+          entity_id: number.marstek_venus_modbus_max_discharge_power
+        data:
+          value: 1200
+      - service: number.set_value
+        target:
+          entity_id: number.marstek_venus_modbus_max_charge_power
+        data:
+          value: 2500

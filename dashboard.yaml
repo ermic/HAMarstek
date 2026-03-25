@@ -4,17 +4,14 @@ views:
     path: marstek
     icon: mdi:battery-charging
     cards:
-
-      # ── BATTERIJ STATUS ──────────────────────────────────────────────────────
       - type: vertical-stack
         cards:
           - type: markdown
-            content: "## Batterij Status"
-
+            content: '## Batterij Status'
           - type: gauge
             entity: sensor.marstek_venus_modbus_battery_soc
             name: Batterij laadstatus
-            unit: "%"
+            unit: '%'
             min: 0
             max: 100
             needle: true
@@ -22,94 +19,43 @@ views:
               red: 0
               yellow: 20
               green: 50
-
           - type: horizontal-stack
             cards:
               - type: entity
                 entity: sensor.marstek_venus_modbus_stored_energy
                 name: Opgeslagen
                 icon: mdi:battery-high
-
               - type: entity
                 entity: sensor.marstek_venus_modbus_battery_power
                 name: Batterijvermogen
                 icon: mdi:lightning-bolt
-
               - type: entity
                 entity: sensor.marstek_venus_modbus_inverter_state
                 name: Inverterstatus
                 icon: mdi:state-machine
-
-      # ── STROOM OVERZICHT ─────────────────────────────────────────────────────
+      - type: history-graph
+        title: Vermogen (24u)
+        refresh_interval: 60
+        entities:
+          - entity: sensor.marstek_ct_4de1_battery_e3e9_phase_a_power
+            name: Net
+          - entity: sensor.marstek_venus_modbus_battery_power
+            name: Batterij
+        hours_to_show: 24
       - type: vertical-stack
         cards:
           - type: markdown
-            content: "## Stroom Overzicht"
-
+            content: '## Stroom Overzicht'
           - type: horizontal-stack
             cards:
               - type: entity
-                entity: sensor.marstek_ct_4de1_battery_e3e9_phase_a_power
+                entity: sensor.marstek_ct_4de1_battery_e3e9_total_power
                 name: Net vermogen
                 icon: mdi:transmission-tower
-
               - type: entity
                 entity: sensor.envoy_122250110136_current_power_production
                 name: Zonnepanelen
                 icon: mdi:solar-power
-
-
-      # ── NUL OP DE METER BEDIENING ────────────────────────────────────────────
-      - type: vertical-stack
-        cards:
-          - type: markdown
-            content: "## Nul op de Meter"
-
-          - type: entities
-            entities:
-              - entity: input_boolean.marstek_nul_op_de_meter_actief
-                name: Nul op de meter actief
-                toggle: true
-
-              - entity: sensor.marstek_zero_export_action
-                name: Huidige actie
-
-              - entity: sensor.marstek_zero_exporter
-                name: Zero export vermogen
-
-              - entity: input_number.marstek_zero_export_deadband
-                name: Deadband (W)
-
-      # ── MODBUS INSTELLINGEN ───────────────────────────────────────────────────
-      - type: vertical-stack
-        cards:
-          - type: markdown
-            content: "## Batterij Instellingen"
-
-          - type: entities
-            entities:
-              - entity: select.marstek_venus_modbus_force_mode
-                name: Forceer modus
-
-              - entity: select.marstek_venus_modbus_user_work_mode
-                name: Werkmodus
-
-              - entity: number.marstek_venus_modbus_max_charge_power
-                name: Max laadvermogen (W)
-
-              - entity: number.marstek_venus_modbus_max_discharge_power
-                name: Max ontlaadvermogen (W)
-
-              - entity: number.marstek_venus_modbus_set_charge_power
-                name: Huidig laadvermogen (W)
-
-              - entity: number.marstek_venus_modbus_set_discharge_power
-                name: Huidig ontlaadvermogen (W)
-
-              - entity: number.marstek_venus_modbus_charge_to_soc
-                name: Laden tot SoC (%)
-
-      # ── GRAFIEKEN ────────────────────────────────────────────────────────────
       - type: history-graph
         title: Batterij SoC (24u)
         hours_to_show: 24
@@ -117,104 +63,343 @@ views:
         entities:
           - entity: sensor.marstek_venus_modbus_battery_soc
             name: SoC %
-
-      - type: history-graph
-        title: Vermogen (24u)
-        hours_to_show: 24
-        refresh_interval: 60
-        entities:
-          - entity: sensor.marstek_ct_4de1_battery_e3e9_phase_a_power
-            name: Net
-          - entity: sensor.marstek_venus_modbus_battery_power
-            name: Batterij
-          - entity: sensor.marstek_venus_modbus_ac_power
-            name: AC
-
-      # ── ENERGIE VANDAAG ───────────────────────────────────────────────────────
       - type: vertical-stack
         cards:
           - type: markdown
-            content: "## Energie Vandaag"
-
-          - type: horizontal-stack
-            cards:
-              - type: entity
-                entity: sensor.marstek_venus_modbus_daily_charging_energy
-                name: Geladen
-                icon: mdi:battery-arrow-up
-
-              - type: entity
-                entity: sensor.marstek_venus_modbus_daily_discharging_energy
-                name: Ontladen
-                icon: mdi:battery-arrow-down
-
-              - type: entity
-                entity: sensor.envoy_122250110136_energy_production_today
-                name: Zon opbrengst
-                icon: mdi:solar-panel
-
-          - type: horizontal-stack
-            cards:
-              - type: entity
-                entity: sensor.zonneplan_electricity_consumption_today
-                name: Verbruik vandaag
-
-              - type: entity
-                entity: sensor.zonneplan_electricity_returned_today
-                name: Teruggeleverd
-
-              - type: entity
-                entity: sensor.zonneplan_current_electricity_tariff
-                name: Huidig tarief
-                icon: mdi:cash
-
-      # ── SYSTEEM STATUS ────────────────────────────────────────────────────────
-      - type: vertical-stack
-        cards:
-          - type: markdown
-            content: "## Systeem Status"
-
+            content: '## Systeem Status'
           - type: horizontal-stack
             cards:
               - type: entity
                 entity: sensor.marstek_venus_modbus_internal_temperature
                 name: Temp intern
-
               - type: entity
                 entity: sensor.marstek_venus_modbus_conversion_efficiency
                 name: Efficiëntie
-
               - type: entity
                 entity: sensor.marstek_venus_modbus_battery_voltage
                 name: Batterijspanning
-
+      - type: vertical-stack
+        cards:
+          - type: markdown
+            content: '## Energie Vandaag'
           - type: horizontal-stack
             cards:
               - type: entity
-                entity: binary_sensor.marstek_venuse_3_0_charging_enabled
-                name: Laden actief
-
-              - type: entity
-                entity: binary_sensor.marstek_venuse_3_0_discharging_enabled
-                name: Ontladen actief
-
-              - type: entity
-                entity: binary_sensor.marstek_venus_modbus_wifi_status
-                name: WiFi
-
+                entity: sensor.envoy_122250110136_energy_production_today
+                name: Zon opbrengst
+                icon: mdi:solar-panel
           - type: horizontal-stack
             cards:
               - type: entity
-                entity: sensor.marstek_venuse_3_0_error_code
-                name: Foutcode (BLE)
-                icon: mdi:alert-circle-outline
-
+                entity: sensor.zonneplan_electricity_consumption_today
+                name: Verbruik vandaag
               - type: entity
-                entity: sensor.marstek_venuse_3_0_state
-                name: Toestand (BLE)
-                icon: mdi:state-machine
-
+                entity: sensor.zonneplan_electricity_returned_today
+                name: Teruggeleverd
               - type: entity
-                entity: select.marstek_venuse_3_0_operating_mode
-                name: Modus (BLE)
-                icon: mdi:cog
+                entity: sensor.zonneplan_current_electricity_tariff
+                name: Huidig tarief
+                icon: mdi:cash
+      - type: custom:plotly-graph
+        hours_to_show: 30
+        refresh_interval: 60
+        time_offset: 27h
+        disable_pinch_to_zoom: true
+        update_now_every_minute: true
+        fn: |
+          $fn ({ hass, vars, getFromConfig }) => {
+
+            const hours_to_show = getFromConfig('hours_to_show');
+            const time_offset = parseInt(getFromConfig('time_offset'));
+            const updateNow = getFromConfig('update_now_every_minute') === true;
+
+            vars.x = [];
+            vars.y = [];
+            vars.color = [];
+            vars.hover = [];
+
+            vars.min = { p: 999, t: null };
+            vars.max = { p: -999, t: null };
+
+            vars.ymin = 999;
+            vars.ymax = -999;
+
+            vars.unit_of_measurement =
+              hass.states['sensor.zonneplan_current_electricity_tariff'].attributes.unit_of_measurement;
+
+            vars.now = {
+              t: Date.now(),
+              p: parseFloat(hass.states['sensor.zonneplan_current_electricity_tariff'].state)
+            };
+
+            // ✅ Live updating of NOW time
+            if (updateNow) {
+              vars.now.t = Date.now();
+            }
+
+            vars.avg = { p: 0, c: 0 };
+            vars.thresholds = { low_max: null, normal_max: null };
+
+            let start = new Date();
+            start.setHours(start.getHours() - time_offset);
+
+            let end = new Date();
+            end.setHours(start.getHours() + hours_to_show);
+
+            hass.states['sensor.zonneplan_current_electricity_tariff']?.attributes?.forecast?.map(e => {
+
+              const forecastTime = new Date(e.datetime).getTime();
+              if (start >= new Date(e.datetime) || end < new Date(e.datetime)) return;
+
+              var t = forecastTime + 1800000;
+              var p = e.electricity_price / 10000000;
+
+              vars.avg.p += p;
+              vars.avg.c++;
+
+              var c = e.tariff_group
+                .replace("low", "#00a964")
+                .replace("normal", "#FFD700")
+                .replace("high", "#FF2E2E");
+
+              if (e.tariff_group === "low") {
+                if (vars.thresholds.low_max === null || p > vars.thresholds.low_max)
+                  vars.thresholds.low_max = p;
+              } else if (e.tariff_group === "normal") {
+                if (vars.thresholds.normal_max === null || p > vars.thresholds.normal_max)
+                  vars.thresholds.normal_max = p;
+              }
+
+              if (forecastTime > Date.now()) {
+                if (p < vars.min.p) vars.min = { p, t, c };
+                if (p > vars.max.p) vars.max = { p, t, c };
+              }
+
+              if (p < vars.ymin) vars.ymin = p;
+              if (p > vars.ymax) vars.ymax = p;
+
+              vars.x.push(t);
+              vars.y.push(p);
+              vars.color.push(c);
+
+              vars.hover.push(
+                "<b>" +
+                String(new Date(t).getHours()).padStart(2, "0") + "-" +
+                String(new Date(t + 3600000).getHours()).padStart(2, "0") +
+                ": " + p.toFixed(3) + " " + vars.unit_of_measurement +
+                "</b>"
+              );
+            });
+
+            if (vars.thresholds.low_max === null) vars.thresholds.low_max = vars.ymin;
+            if (vars.thresholds.normal_max === null)
+              vars.thresholds.normal_max =
+                vars.thresholds.low_max + (vars.ymax - vars.thresholds.low_max) / 2;
+
+            vars.priceColor = (p) => {
+              const lowMax = vars.thresholds.low_max;
+              const normalMax = vars.thresholds.normal_max;
+              if (p <= lowMax) return "#00a964";
+              if (p <= normalMax) return "#FFD700";
+              return "#FF2E2E";
+            };
+
+            vars.min.h =
+              "<b>" + vars.min.p.toFixed(3) + " " + vars.unit_of_measurement +
+              " @ " + new Date(vars.min.t).getHours() + ":00</b>";
+
+            vars.max.h =
+              "<b>" + vars.max.p.toFixed(3) + " " + vars.unit_of_measurement +
+              " @ " + new Date(vars.max.t).getHours() + ":00</b>";
+
+            vars.avg.p = vars.avg.p / vars.avg.c;
+            vars.avg.h =
+              "<b>" + vars.avg.p.toFixed(3) + " " + vars.unit_of_measurement + " average</b>";
+
+            // ✅ Determine NOW color FIRST
+            let tg = hass.states['sensor.zonneplan_current_electricity_tariff']?.attributes?.tariff_group;
+
+            if (tg) {
+              vars.now.c = tg
+                .replace("low", "#00a964")
+                .replace("normal", "#FFD700")
+                .replace("high", "#FF2E2E");
+            } else {
+              let currentForecast =
+                hass.states['sensor.zonneplan_current_electricity_tariff']?.attributes?.forecast?.find(e => {
+                  let t = new Date(e.datetime).getTime();
+                  return vars.now.t >= t && vars.now.t < t + 3600000;
+                });
+
+              vars.now.c = currentForecast
+                ? currentForecast.tariff_group
+                    .replace("low", "#00a964")
+                    .replace("normal", "#FFD700")
+                    .replace("high", "#FF2E2E")
+                : "#000000";
+            }
+
+            // ✅ NOW label created AFTER color is known
+            vars.now.h =
+              `<span style="color:${vars.now.c}"><b>${vars.now.p.toFixed(3)} ${vars.unit_of_measurement} @ ${new Date(vars.now.t).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}</b></span>`;
+          }
+        layout:
+          margin:
+            l: 55
+            r: 10
+            b: 40
+            t: 40
+          dragmode: false
+          clickmode: none
+          legend:
+            itemclick: false
+            itemdoubleclick: false
+          yaxis:
+            fixedrange: false
+            showgrid: true
+            visible: true
+            showticklabels: true
+            showline: true
+            title: ''
+            tickvals: |-
+              $fn ({vars}) => {
+                const ticks = [];
+                const start = Math.floor(vars.ymin * 100) / 100;
+                const end = Math.ceil(vars.ymax * 100) / 100;
+                for (let p = start; p <= end + 0.0001; p += 0.01)
+                  ticks.push(Number(p.toFixed(2)));
+                return ticks;
+              }
+            ticktext: |-
+              $fn ({vars}) => {
+                const ticks = [];
+                const start = Math.floor(vars.ymin * 100) / 100;
+                const end = Math.ceil(vars.ymax * 100) / 100;
+                for (let p = start; p <= end + 0.0001; p += 0.01) {
+                  const price = Number(p.toFixed(2));
+                  const c = vars.priceColor(price);
+                  ticks.push(`<span style="color:${c}">${price.toFixed(2)}</span>`);
+                }
+                return ticks;
+              }
+            range: >-
+              $fn ({vars}) => [ Math.max(0, vars.ymin - 0.02), vars.ymax + 0.02
+              ]
+          xaxis:
+            tickformat: '%H'
+            showgrid: false
+            visible: true
+            showticklabels: true
+            showline: false
+            dtick: 3600000
+          annotations:
+            - x: -0.12
+              'y': -0.02
+              xref: paper
+              yref: paper
+              text: <b>€/kWh</b>
+              showarrow: false
+              font:
+                size: 10
+                color: '#CCCCCC'
+              xanchor: left
+              yanchor: bottom
+        config:
+          displayModeBar: false
+          scrollZoom: false
+          doubleClick: false
+        entities:
+          - entity: ''
+            unit_of_measurement: $ex vars.unit_of_measurement
+            showlegend: false
+            x: $ex vars.x
+            'y': $ex vars.y
+            marker:
+              color: $ex vars.color
+            type: bar
+            hovertemplate: $ex vars.hover
+          - entity: ''
+            mode: markers
+            showlegend: true
+            name: $ex vars.min.h
+            hovertemplate: $ex vars.min.h
+            yaxis: y0
+            marker:
+              symbol: diamond
+              size: 10
+              color: $ex vars.min.c
+              cliponaxis: false
+              yanchor: bottom
+            x:
+              - $ex vars.min.t
+            'y':
+              - $ex vars.min.p
+          - entity: ''
+            mode: markers
+            showlegend: true
+            name: $ex vars.max.h
+            hovertemplate: $ex vars.max.h
+            yaxis: y0
+            marker:
+              symbol: diamond
+              size: 10
+              color: $ex vars.max.c
+              cliponaxis: false
+              yanchor: bottom
+            x:
+              - $ex vars.max.t
+            'y':
+              - $ex vars.max.p
+          - entity: ''
+            showlegend: false
+            yaxis: y0
+            layer: above
+            line:
+              width: 2
+              dash: dash
+              color: $ex vars.now.c
+            x: $ex [vars.now.t, vars.now.t]
+            'y':
+              - $ex vars.ymin
+              - $ex (vars.ymax + 0.01)
+            mode: lines
+          - entity: ''
+            name: $ex vars.now.h
+            hovertemplate: $ex vars.now.h
+            showlegend: false
+            yaxis: y0
+            layer: above
+            x:
+              - $ex vars.now.t
+            'y':
+              - $ex (vars.ymax + 0.01)
+            mode: text
+            text:
+              - $ex vars.now.h
+            textposition: top right
+            textoffset: 3
+            textfont:
+              color: $ex vars.now.c
+      - type: vertical-stack
+        cards:
+          - type: markdown
+            content: '## Batterij Instellingen'
+          - type: entities
+            entities:
+              - entity: sensor.marstek_venuse_3_0_operating_mode
+              - entity: switch.marstek_venus_modbus_rs485_control_mode
+              - entity: select.marstek_venuse_3_0_operating_mode
+              - entity: select.marstek_venus_modbus_force_mode
+                name: Forceer modus
+              - entity: select.marstek_venus_modbus_user_work_mode
+                name: Werkmodus
+              - entity: number.marstek_venus_modbus_max_charge_power
+                name: Max laadvermogen (W)
+              - entity: number.marstek_venus_modbus_max_discharge_power
+                name: Max ontlaadvermogen (W)
+              - entity: number.marstek_venus_modbus_set_charge_power
+                name: Huidig laadvermogen (W)
+              - entity: number.marstek_venus_modbus_set_discharge_power
+                name: Huidig ontlaadvermogen (W)
+              - entity: number.marstek_venus_modbus_charge_to_soc
+                name: Laden tot SoC (%)

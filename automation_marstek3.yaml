@@ -1,0 +1,501 @@
+# automation_marstek3.yaml
+# Slimme Marstek VenusE 3.0 batterijstrategie
+#
+# Strategie overzicht:
+#   08:00–17:00  Dag:      anti_feed (zon laadt batterij, batterij dekt verbruik)
+#                          Bij laag tarief + bewolkt: net-laden als SoC < 70%
+#   17:00–19:30  Spitsuur: anti_feed met hoog ontlaadvermogen (2500W) voor vaatwasser
+#                          Geen teruglevering
+#   19:30–23:59  Avond:    Verkoop bij hoog tarief als SoC > 80% en geen zon
+#                          Anders: anti_feed (nul op meter)
+#   00:00–08:00  Nacht:    Net-laden bij laag tarief als SoC < 80%
+#                          Anders: anti_feed
+#
+# Vereisten:
+#   - RS485 control mode aan: switch.marstek_venus_modbus_rs485_control_mode
+#   - Marstek Modbus integratie: sensor.marstek_venus_modbus_*
+#   - Zonneplan integratie:     sensor.zonneplan_current_tariff_group
+#   - CT-003 smart meter:       sensor.marstek_ct_4de1_battery_e3e9_total_power
+#   - Zonhoogte sensor:         sensor.sun_solar_elevation (> 0 = zon schijnt)
+#
+# Sensoren:
+#   sensor.marstek_venus_modbus_battery_soc        → SoC in %
+#   sensor.marstek_ct_4de1_battery_e3e9_total_power → Net vermogen W (+ = afname, - = teruglevering)
+#   sensor.zonneplan_current_tariff_group           → low / normal / high
+#   sensor.zonneplan_current_electricity_tariff     → prijs in €/kWh
+#   sensor.sun_solar_elevation                      → graden boven horizon
+#   sensor.envoy_122250110136_current_power_production → zonnepanelen in kW
+#
+# Entiteiten:
+#   select.marstek_venus_modbus_force_mode      → stop / charge / discharge
+#   select.marstek_venus_modbus_user_work_mode  → manual / anti_feed / trade_mode
+#   number.marstek_venus_modbus_max_charge_power    (0–2500 W)
+#   number.marstek_venus_modbus_max_discharge_power (0–2500 W)
+#   number.marstek_venus_modbus_set_charge_power    (0–2500 W)
+#   number.marstek_venus_modbus_set_discharge_power (0–2500 W)
+
+# =============================================================================
+# AUTOMATION 1: HOOFD STRATEGIE CONTROLLER
+# Bepaalt elke 2 minuten (en bij sleutelmomenten) de juiste batterijmodus
+# =============================================================================
+- id: marstek_v3_strategie_controller
+  alias: "Marstek v3 – Hoofd Strategie Controller"
+  description: >
+    Beslist welke batterijmodus actief is op basis van tijd, tarief en SoC.
+    Prioriteit: nacht-laden > avond-verkoop > spitsuur > dag-laden > standaard.
+  mode: single
+  max_exceeded: silent
+
+  trigger:
+    # Periodieke herberekening
+    - platform: time_pattern
+      minutes: /2
+    # Direct reageren op tariefswijziging
+    - platform: state
+      entity_id: sensor.zonneplan_current_tariff_group
+    # Vaste schakelingsmomenten
+    - platform: time
+      at: "08:00:00"
+    - platform: time
+      at: "17:00:00"
+    - platform: time
+      at: "19:30:00"
+    - platform: time
+      at: "22:00:00"
+
+  action:
+    # Zet RS485 control mode aan als die uit staat (vereist voor force-mode)
+    - if:
+        - condition: state
+          entity_id: switch.marstek_venus_modbus_rs485_control_mode
+          state: "off"
+      then:
+        - service: switch.turn_on
+          target:
+            entity_id: switch.marstek_venus_modbus_rs485_control_mode
+        - delay:
+            seconds: 3
+
+    # Lees huidige waarden in variabelen
+    - variables:
+        soc: "{{ states('sensor.marstek_venus_modbus_battery_soc') | float(0) }}"
+        tarief_groep: "{{ states('sensor.zonneplan_current_tariff_group') | default('normal') }}"
+        tarief_prijs: "{{ states('sensor.zonneplan_current_electricity_tariff') | float(0) }}"
+        zon_elevatie: "{{ states('sensor.sun_solar_elevation') | float(-90) }}"
+        zon_schijnt: "{{ states('sensor.sun_solar_elevation') | float(-90) > 0 }}"
+        net_vermogen: "{{ states('sensor.marstek_ct_4de1_battery_e3e9_total_power') | float(0) }}"
+        is_spitsuur: >
+          {{ (now().hour == 17)
+             or (now().hour == 18)
+             or (now().hour == 19 and now().minute < 30) }}
+        is_avond: >
+          {{ (now().hour == 19 and now().minute >= 30)
+             or (now().hour >= 20) }}
+        is_nacht: >
+          {{ (now().hour >= 22) or (now().hour < 8) }}
+        is_dag: >
+          {{ now().hour >= 8 and now().hour < 17 }}
+
+    - choose:
+        # -------------------------------------------------------------------
+        # MODUS 1: NACHT LADEN
+        # Goedkoop stroom van net laden als SoC te laag is voor de volgende dag
+        # Drempel 80%: genoeg capaciteit voor de ochtend tot de zon opkomt
+        # -------------------------------------------------------------------
+        - conditions:
+            - condition: template
+              value_template: >
+                {{ is_nacht and tarief_groep == 'low' and soc < 80 }}
+          sequence:
+            - service: select.select_option
+              target:
+                entity_id: select.marstek_venus_modbus_force_mode
+              data:
+                option: charge
+            - service: number.set_value
+              target:
+                entity_id: number.marstek_venus_modbus_set_charge_power
+              data:
+                value: 2000
+            - service: number.set_value
+              target:
+                entity_id: number.marstek_venus_modbus_max_charge_power
+              data:
+                value: 2000
+            - service: system_log.write
+              data:
+                message: >
+                  Marstek v3 NACHT LADEN: tarief={{ tarief_groep }}
+                  ({{ tarief_prijs | round(3) }} €/kWh), SoC={{ soc }}%
+                level: info
+
+        # -------------------------------------------------------------------
+        # MODUS 2: AVOND VERKOOP
+        # Verkoop overtollige capaciteit bij hoog tarief na 19:30
+        # Voorwaarden: avond, geen zon, tarief hoog, voldoende SoC
+        # Drempel 80%: boven dit punt is er meer dan genoeg voor de nacht
+        # Stop-drempel zit in automation 3 (SoC < 50%)
+        # -------------------------------------------------------------------
+        - conditions:
+            - condition: template
+              value_template: >
+                {{ is_avond
+                   and tarief_groep == 'high'
+                   and soc > 80
+                   and not zon_schijnt }}
+          sequence:
+            - service: select.select_option
+              target:
+                entity_id: select.marstek_venus_modbus_force_mode
+              data:
+                option: discharge
+            - service: number.set_value
+              target:
+                entity_id: number.marstek_venus_modbus_set_discharge_power
+              data:
+                value: 2000
+            - service: number.set_value
+              target:
+                entity_id: number.marstek_venus_modbus_max_discharge_power
+              data:
+                value: 2000
+            - service: system_log.write
+              data:
+                message: >
+                  Marstek v3 AVOND VERKOOP: tarief={{ tarief_groep }}
+                  ({{ tarief_prijs | round(3) }} €/kWh), SoC={{ soc }}%
+                level: info
+
+        # -------------------------------------------------------------------
+        # MODUS 3: SPITSUUR (17:00–19:30)
+        # Anti-feed met hoog ontlaadvermogen zodat de batterij de vaatwasser
+        # en andere pieken kan opvangen. Geen teruglevering aan net.
+        # -------------------------------------------------------------------
+        - conditions:
+            - condition: template
+              value_template: "{{ is_spitsuur }}"
+          sequence:
+            - service: select.select_option
+              target:
+                entity_id: select.marstek_venus_modbus_force_mode
+              data:
+                option: stop
+            - service: select.select_option
+              target:
+                entity_id: select.marstek_venus_modbus_user_work_mode
+              data:
+                option: anti_feed
+            # Hoog ontlaadvermogen voor pieken (vaatwasser ~2000W)
+            - service: number.set_value
+              target:
+                entity_id: number.marstek_venus_modbus_max_discharge_power
+              data:
+                value: 2500
+            - service: number.set_value
+              target:
+                entity_id: number.marstek_venus_modbus_max_charge_power
+              data:
+                value: 2500
+            - service: system_log.write
+              data:
+                message: >
+                  Marstek v3 SPITSUUR: anti_feed actief, max ontladen 2500W,
+                  SoC={{ soc }}%, net={{ net_vermogen }}W
+                level: info
+
+        # -------------------------------------------------------------------
+        # MODUS 4: DAG LADEN VIA NET (bewolkte dag)
+        # Als het overdag laag tarief is en de zon nauwelijks schijnt,
+        # laad dan toch bij via het net (zon > 10° = genoeg zon, geen net laden)
+        # -------------------------------------------------------------------
+        - conditions:
+            - condition: template
+              value_template: >
+                {{ is_dag
+                   and tarief_groep == 'low'
+                   and soc < 70
+                   and zon_elevatie < 10 }}
+          sequence:
+            - service: select.select_option
+              target:
+                entity_id: select.marstek_venus_modbus_force_mode
+              data:
+                option: charge
+            - service: number.set_value
+              target:
+                entity_id: number.marstek_venus_modbus_set_charge_power
+              data:
+                value: 1500
+            - service: number.set_value
+              target:
+                entity_id: number.marstek_venus_modbus_max_charge_power
+              data:
+                value: 1500
+            - service: system_log.write
+              data:
+                message: >
+                  Marstek v3 DAG LADEN (bewolkt): tarief={{ tarief_groep }},
+                  zon={{ zon_elevatie | round(1) }}°, SoC={{ soc }}%
+                level: info
+
+      # -------------------------------------------------------------------
+      # STANDAARD: Anti-feed modus
+      # Batterij dekt eigen verbruik, laden via zon, geen teruglevering
+      # -------------------------------------------------------------------
+      default:
+        - service: select.select_option
+          target:
+            entity_id: select.marstek_venus_modbus_force_mode
+          data:
+            option: stop
+        - service: select.select_option
+          target:
+            entity_id: select.marstek_venus_modbus_user_work_mode
+          data:
+            option: anti_feed
+        # Normale ontlaadlimiet overdag, hoger is al ingesteld voor spitsuur
+        - service: number.set_value
+          target:
+            entity_id: number.marstek_venus_modbus_max_discharge_power
+          data:
+            value: 1200
+        - service: number.set_value
+          target:
+            entity_id: number.marstek_venus_modbus_max_charge_power
+          data:
+            value: 2500
+
+# =============================================================================
+# AUTOMATION 2: STOP LADEN BIJ VOL
+# Voorkomt overbelasting en stopt net-laden als batterij voldoende vol is
+# =============================================================================
+- id: marstek_v3_stop_laden_vol
+  alias: "Marstek v3 – Stop Laden Bij Vol"
+  description: "Stopt forceer-laden als SoC boven 95% komt en schakel naar anti_feed"
+  mode: single
+
+  trigger:
+    - platform: numeric_state
+      entity_id: sensor.marstek_venus_modbus_battery_soc
+      above: 99
+
+  condition:
+    - condition: template
+      value_template: >
+        {{ states('select.marstek_venus_modbus_force_mode') == 'charge' }}
+
+  action:
+    - service: select.select_option
+      target:
+        entity_id: select.marstek_venus_modbus_force_mode
+      data:
+        option: stop
+    - service: select.select_option
+      target:
+        entity_id: select.marstek_venus_modbus_user_work_mode
+      data:
+        option: anti_feed
+    - service: system_log.write
+      data:
+        message: >
+          Marstek v3: Laden gestopt, batterij vol
+          (SoC={{ states('sensor.marstek_venus_modbus_battery_soc') }}%)
+        level: info
+
+# =============================================================================
+# AUTOMATION 3: STOP VERKOOP BIJ LAGE SOC
+# Bewaakt de minimum SoC tijdens avond-verkoop en stopt tijdig
+# =============================================================================
+- id: marstek_v3_stop_verkoop_lage_soc
+  alias: "Marstek v3 – Stop Verkoop Bij Lage SoC"
+  description: >
+    Stopt de avond-verkoop als SoC onder 50% zakt.
+    Dit zorgt dat er genoeg capaciteit overblijft voor het huishouden.
+  mode: single
+
+  trigger:
+    - platform: numeric_state
+      entity_id: sensor.marstek_venus_modbus_battery_soc
+      below: 50
+
+  condition:
+    # Alleen actief als we daadwerkelijk aan het verkopen zijn
+    - condition: template
+      value_template: >
+        {{ states('select.marstek_venus_modbus_force_mode') == 'discharge' }}
+    # Alleen 's avonds (niet tijdens spitsuur-ontladen)
+    - condition: time
+      after: "19:30:00"
+      before: "06:00:00"
+
+  action:
+    - service: select.select_option
+      target:
+        entity_id: select.marstek_venus_modbus_force_mode
+      data:
+        option: stop
+    - service: select.select_option
+      target:
+        entity_id: select.marstek_venus_modbus_user_work_mode
+      data:
+        option: anti_feed
+    - service: system_log.write
+      data:
+        message: >
+          Marstek v3: Verkoop gestopt, SoC te laag
+          ({{ states('sensor.marstek_venus_modbus_battery_soc') }}% < 50%)
+        level: warning
+
+# =============================================================================
+# AUTOMATION 4: AVOND – VERKOOP BIJ BESTE TARIEF
+# Reageert direct op tariefswijziging 's avonds om het beste moment te pakken
+# =============================================================================
+- id: marstek_v3_avond_tarief_hoog
+  alias: "Marstek v3 – Start Verkoop Bij Hoog Avondtarief"
+  description: >
+    Start direct met verkopen als het tarief 's avonds naar 'high' springt
+    en er voldoende SoC beschikbaar is.
+  mode: single
+
+  trigger:
+    - platform: state
+      entity_id: sensor.zonneplan_current_tariff_group
+      to: "high"
+
+  condition:
+    # Alleen 's avonds na 19:30
+    - condition: time
+      after: "19:30:00"
+      before: "23:59:00"
+    # Voldoende SoC om te verkopen
+    - condition: numeric_state
+      entity_id: sensor.marstek_venus_modbus_battery_soc
+      above: 80
+    # Zon schijnt niet
+    - condition: template
+      value_template: >
+        {{ states('sensor.sun_solar_elevation') | float(-90) < 0 }}
+    # RS485 actief
+    - condition: state
+      entity_id: switch.marstek_venus_modbus_rs485_control_mode
+      state: "on"
+
+  action:
+    - service: select.select_option
+      target:
+        entity_id: select.marstek_venus_modbus_force_mode
+      data:
+        option: discharge
+    - service: number.set_value
+      target:
+        entity_id: number.marstek_venus_modbus_set_discharge_power
+      data:
+        value: 2000
+    - service: number.set_value
+      target:
+        entity_id: number.marstek_venus_modbus_max_discharge_power
+      data:
+        value: 2000
+    - service: system_log.write
+      data:
+        message: >
+          Marstek v3: Avond-verkoop gestart bij tarief HOOG
+          ({{ states('sensor.zonneplan_current_electricity_tariff') | float(0) | round(3) }} €/kWh),
+          SoC={{ states('sensor.marstek_venus_modbus_battery_soc') }}%
+        level: info
+
+# =============================================================================
+# AUTOMATION 5: STOP VERKOOP BIJ DALEND TARIEF
+# Stopt de verkoop als het tarief 's avonds daalt naar normal of low
+# =============================================================================
+- id: marstek_v3_avond_tarief_niet_hoog
+  alias: "Marstek v3 – Stop Verkoop Bij Dalend Avondtarief"
+  description: >
+    Stopt de verkoop als het tarief 's avonds niet meer 'high' is.
+    Schakelt terug naar anti_feed voor nul-op-meter.
+  mode: single
+
+  trigger:
+    - platform: state
+      entity_id: sensor.zonneplan_current_tariff_group
+      to: "normal"
+    - platform: state
+      entity_id: sensor.zonneplan_current_tariff_group
+      to: "low"
+
+  condition:
+    # Alleen 's avonds
+    - condition: time
+      after: "19:30:00"
+      before: "23:59:00"
+    # Alleen als we aan het verkopen waren
+    - condition: template
+      value_template: >
+        {{ states('select.marstek_venus_modbus_force_mode') == 'discharge' }}
+
+  action:
+    - service: select.select_option
+      target:
+        entity_id: select.marstek_venus_modbus_force_mode
+      data:
+        option: stop
+    - service: select.select_option
+      target:
+        entity_id: select.marstek_venus_modbus_user_work_mode
+      data:
+        option: anti_feed
+    - service: system_log.write
+      data:
+        message: >
+          Marstek v3: Verkoop gestopt, tarief gedaald naar
+          {{ states('sensor.zonneplan_current_tariff_group') }}
+          ({{ states('sensor.zonneplan_current_electricity_tariff') | float(0) | round(3) }} €/kWh)
+        level: info
+
+# =============================================================================
+# AUTOMATION 6: DAGELIJKSE RESET OM 08:00
+# Zorgt voor een schone start van de dag in anti_feed modus
+# =============================================================================
+- id: marstek_v3_dagelijkse_reset
+  alias: "Marstek v3 – Dagelijkse Reset 08:00"
+  description: >
+    Reset de batterijmodus elke ochtend om 08:00 naar anti_feed.
+    Zet standaard ontlaadlimieten voor de dag.
+  mode: single
+
+  trigger:
+    - platform: time
+      at: "08:00:00"
+
+  condition:
+    - condition: state
+      entity_id: switch.marstek_venus_modbus_rs485_control_mode
+      state: "on"
+
+  action:
+    - service: select.select_option
+      target:
+        entity_id: select.marstek_venus_modbus_force_mode
+      data:
+        option: stop
+    - service: select.select_option
+      target:
+        entity_id: select.marstek_venus_modbus_user_work_mode
+      data:
+        option: anti_feed
+    - service: number.set_value
+      target:
+        entity_id: number.marstek_venus_modbus_max_discharge_power
+      data:
+        value: 1200
+    - service: number.set_value
+      target:
+        entity_id: number.marstek_venus_modbus_max_charge_power
+      data:
+        value: 2500
+    - service: system_log.write
+      data:
+        message: >
+          Marstek v3: Dagelijkse reset – anti_feed modus actief,
+          SoC={{ states('sensor.marstek_venus_modbus_battery_soc') }}%
+        level: info

@@ -1,0 +1,39 @@
+id: marstek_v3_dagelijkse_reset
+alias: "Marstek v3 – Dagelijkse Reset 08:00"
+description: "Reset elke ochtend om 08:00 naar anti_feed met standaard limieten voor de dag."
+mode: single
+
+trigger:
+  - platform: time
+    at: "08:00:00"
+
+condition:
+  - condition: state
+    entity_id: switch.marstek_venus_modbus_rs485_control_mode
+    state: "on"
+
+action:
+  - service: select.select_option
+    target:
+      entity_id: select.marstek_venus_modbus_force_mode
+    data:
+      option: stop
+  - service: select.select_option
+    target:
+      entity_id: select.marstek_venus_modbus_user_work_mode
+    data:
+      option: anti_feed
+  - service: number.set_value
+    target:
+      entity_id: number.marstek_venus_modbus_max_discharge_power
+    data:
+      value: 1200
+  - service: number.set_value
+    target:
+      entity_id: number.marstek_venus_modbus_max_charge_power
+    data:
+      value: 2500
+  - service: system_log.write
+    data:
+      message: "Marstek v3: Dagelijkse reset – anti_feed modus actief, SoC={{ states('sensor.marstek_venus_modbus_battery_soc') }}%"
+      level: info
