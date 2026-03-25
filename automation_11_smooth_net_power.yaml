@@ -1,0 +1,21 @@
+id: marstek_update_smooth_power
+alias: "Marstek – Update glad net vermogen"
+description: >
+  Werkt elke 10 seconden het gladde net-vermogen bij via een EMA filter
+  (30% nieuw, 70% oud). Hierdoor reageren automations minder op korte pieken.
+mode: single
+max_exceeded: silent
+
+trigger:
+  - platform: time_pattern
+    seconds: /10
+
+action:
+  - variables:
+      ruw: "{{ states('sensor.marstek_ct_4de1_battery_e3e9_total_power') | float(0) }}"
+      vorig: "{{ states('input_number.marstek_net_power_smooth') | float(0) }}"
+  - service: input_number.set_value
+    target:
+      entity_id: input_number.marstek_net_power_smooth
+    data:
+      value: "{{ (0.3 * ruw + 0.7 * vorig) | round(1) }}"

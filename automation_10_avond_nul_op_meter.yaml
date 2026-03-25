@@ -32,7 +32,7 @@ condition:
 
 action:
   - variables:
-      net_vermogen: "{{ states('sensor.marstek_ct_4de1_battery_e3e9_total_power') | float(0) }}"
+      net_vermogen: "{{ states('input_number.marstek_net_power_smooth') | float(0) }}"
       huidig: "{{ states('number.marstek_venus_modbus_set_discharge_power') | int(0) }}"
       gewenst: "{{ [[huidig + (net_vermogen | round(0) | int), 0] | max, 1200] | min }}"
 

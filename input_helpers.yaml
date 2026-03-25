@@ -52,3 +52,12 @@ input_number:
     step: 1
     unit_of_measurement: W
     mode: box
+
+  marstek_net_power_smooth:
+    name: Marstek net vermogen (glad)
+    icon: mdi:sine-wave
+    min: -3000
+    max: 3000
+    step: 1
+    unit_of_measurement: W
+    mode: box

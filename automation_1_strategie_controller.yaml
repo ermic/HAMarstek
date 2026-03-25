@@ -40,7 +40,7 @@ action:
       tarief_prijs: "{{ states('sensor.zonneplan_current_electricity_tariff') | float(0) }}"
       zon_elevatie: "{{ states('sensor.sun_solar_elevation') | float(-90) }}"
       zon_schijnt: "{{ states('sensor.sun_solar_elevation') | float(-90) > 0 }}"
-      net_vermogen: "{{ states('sensor.marstek_ct_4de1_battery_e3e9_total_power') | float(0) }}"
+      net_vermogen: "{{ states('input_number.marstek_net_power_smooth') | float(0) }}"
       is_spitsuur: "{{ (now().hour == 17) or (now().hour == 18) or (now().hour == 19 and now().minute < 30) }}"
       is_avond: "{{ (now().hour == 19 and now().minute >= 30) or (now().hour >= 20) }}"
       is_nacht: "{{ (now().hour >= 22) or (now().hour < 8) }}"
