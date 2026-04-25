@@ -1,0 +1,132 @@
+alias: Marstek charge/discharge daily kickoff
+description: >
+  Geeft één laad-startschot en één ontlaad-startschot per dag, op basis
+  van de goedkoopste/duurste uren in de Zonneplan-forecast voor vandaag.
+  Laden in venster 00:00-17:00, ontladen in 17:00-23:00.
+mode: single
+trigger:
+  - platform: time_pattern
+    hours: "/1"
+    minutes: 0
+condition: []
+variables:
+  timezone_offset: 2
+  charge_hour: >
+    {% set today_local = (as_timestamp(utcnow()) + timezone_offset * 3600) | timestamp_custom('%Y-%m-%d') %}
+    {% set forecast = state_attr('sensor.zonneplan_current_electricity_tariff', 'forecast') or [] %}
+    {% set ns = namespace(hours=[]) %}
+    {% for f in forecast %}
+      {% set ts = as_timestamp(strptime(f.datetime, '%Y-%m-%dT%H:%M:%S.%fZ')) + timezone_offset * 3600 %}
+      {% set d = ts | timestamp_custom('%Y-%m-%d') %}
+      {% set h = ts | timestamp_custom('%H') | int %}
+      {% if d == today_local and h < 17 %}
+        {% set ns.hours = ns.hours + [{'hour': h, 'price': f.electricity_price | float(0) / 10000000}] %}
+      {% endif %}
+    {% endfor %}
+    {% set bns = namespace(blocks=[], current=[]) %}
+    {% for h in ns.hours | sort(attribute='hour') %}
+      {% if h.price < 0 %}
+        {% set bns.current = bns.current + [h] %}
+      {% else %}
+        {% if bns.current | length > 0 %}
+          {% set bns.blocks = bns.blocks + [bns.current] %}
+          {% set bns.current = [] %}
+        {% endif %}
+      {% endif %}
+    {% endfor %}
+    {% if bns.current | length > 0 %}
+      {% set bns.blocks = bns.blocks + [bns.current] %}
+    {% endif %}
+    {% set rns = namespace(charge_hour=none) %}
+    {% if bns.blocks | length > 0 %}
+      {% set longest = bns.blocks | sort(attribute='0.hour') | sort(attribute='__len__', reverse=true) | first %}
+      {% if longest | length <= 5 %}
+        {% set rns.charge_hour = longest[0].hour %}
+      {% else %}
+        {% set rns.charge_hour = (longest | sort(attribute='price') | first).hour %}
+      {% endif %}
+    {% else %}
+      {% if ns.hours | length > 0 %}
+        {% set rns.charge_hour = (ns.hours | sort(attribute='price') | first).hour %}
+      {% endif %}
+    {% endif %}
+    {{ rns.charge_hour }}
+  discharge_hour: >
+    {% set today_local = (as_timestamp(utcnow()) + timezone_offset * 3600) | timestamp_custom('%Y-%m-%d') %}
+    {% set forecast = state_attr('sensor.zonneplan_current_electricity_tariff', 'forecast') or [] %}
+    {% set ns = namespace(hours=[]) %}
+    {% for f in forecast %}
+      {% set ts = as_timestamp(strptime(f.datetime, '%Y-%m-%dT%H:%M:%S.%fZ')) + timezone_offset * 3600 %}
+      {% set d = ts | timestamp_custom('%Y-%m-%d') %}
+      {% set h = ts | timestamp_custom('%H') | int %}
+      {% if d == today_local and h >= 17 and h < 23 %}
+        {% set ns.hours = ns.hours + [{'hour': h, 'price': f.electricity_price | float(0) / 10000000}] %}
+      {% endif %}
+    {% endfor %}
+    {% if ns.hours | length > 0 %}
+      {{ (ns.hours | sort(attribute='price', reverse=true) | first).hour }}
+    {% else %}
+      {{ none }}
+    {% endif %}
+  current_hour: "{{ now().hour }}"
+action:
+  - choose:
+      - alias: Laad-startschot
+        conditions:
+          - "{{ charge_hour | int(-1) == current_hour | int }}"
+        sequence:
+          - service: switch.turn_on
+            target:
+              entity_id: switch.marstek_venus_modbus_rs485_control_mode
+          - service: select.select_option
+            target:
+              entity_id:
+                - select.marstek_venus_modbus_force_mode
+                - select.marstek_venus_modbus_force_mode_2
+            data:
+              option: charge
+          - delay: "00:00:05"
+          - service: number.set_value
+            target:
+              entity_id: number.marstek_venus_modbus_set_charge_power
+            data:
+              value: 1250
+          - service: number.set_value
+            target:
+              entity_id: number.marstek_venus_modbus_set_charge_power_2
+            data:
+              value: 1250
+          - service: logbook.log
+            data:
+              name: Marstek
+              message: "Laad-startschot gevuurd op uur {{ current_hour }}"
+      - alias: Ontlaad-startschot
+        conditions:
+          - "{{ discharge_hour | int(-1) == current_hour | int }}"
+        sequence:
+          - service: switch.turn_on
+            target:
+              entity_id: switch.marstek_venus_modbus_rs485_control_mode
+          - service: select.select_option
+            target:
+              entity_id:
+                - select.marstek_venus_modbus_force_mode
+                - select.marstek_venus_modbus_force_mode_2
+            data:
+              option: discharge
+          - delay: "00:00:05"
+          - service: number.set_value
+            target:
+              entity_id: number.marstek_venus_modbus_set_discharge_power
+            data:
+              value: 2500
+          - service: number.set_value
+            target:
+              entity_id: number.marstek_venus_modbus_set_discharge_power_2
+            data:
+              value: >
+                {{ 200 if states('sensor.marstek_venus_modbus_2_battery_soc') | float(0) < 50 else 2500 }}
+          - service: logbook.log
+            data:
+              name: Marstek
+              message: "Ontlaad-startschot gevuurd op uur {{ current_hour }}"
