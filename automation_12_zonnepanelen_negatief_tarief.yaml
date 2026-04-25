@@ -1,0 +1,56 @@
+alias: Zonnepanelen uit bij negatief tarief
+description: >
+  Schakelt de Envoy-productieschakelaar 15 minuten voor een negatief tarief
+  uit, en 15 minuten voor terugkeer naar een positief tarief weer aan.
+  Draait elk kwartier en kijkt 15 minuten vooruit in de Zonneplan-forecast.
+mode: single
+trigger:
+  - platform: time_pattern
+    minutes: "/15"
+condition: []
+action:
+  - variables:
+      target_ts: "{{ as_timestamp(utcnow()) + 900 }}"
+      future_price: >
+        {% set forecast = state_attr('sensor.zonneplan_current_electricity_tariff', 'forecast') %}
+        {% set ns = namespace(price=none) %}
+        {% if forecast %}
+          {% for f in forecast | sort(attribute='datetime') %}
+            {% set f_ts = as_timestamp(strptime(f.datetime, '%Y-%m-%dT%H:%M:%S.%fZ')) %}
+            {% if f_ts <= target_ts %}
+              {% set ns.price = f.electricity_price | float(0) / 10000000 %}
+            {% endif %}
+          {% endfor %}
+        {% endif %}
+        {{ ns.price }}
+  - choose:
+      - alias: Geen forecast beschikbaar - niets doen
+        conditions:
+          - "{{ future_price in (none, 'None', '') }}"
+        sequence: []
+      - alias: Tarief wordt negatief - zonnepanelen uit
+        conditions:
+          - "{{ future_price | float(0) < 0 }}"
+          - "{{ is_state('switch.envoy_122250110136_production', 'on') }}"
+        sequence:
+          - service: switch.turn_off
+            target:
+              entity_id: switch.envoy_122250110136_production
+          - service: logbook.log
+            data:
+              name: Zonnepanelen
+              message: >
+                Uitgeschakeld: tarief over 15 min €{{ future_price | float(0) | round(3) }}/kWh
+      - alias: Tarief is positief - zonnepanelen aan
+        conditions:
+          - "{{ future_price | float(0) >= 0 }}"
+          - "{{ is_state('switch.envoy_122250110136_production', 'off') }}"
+        sequence:
+          - service: switch.turn_on
+            target:
+              entity_id: switch.envoy_122250110136_production
+          - service: logbook.log
+            data:
+              name: Zonnepanelen
+              message: >
+                Ingeschakeld: tarief over 15 min €{{ future_price | float(0) | round(3) }}/kWh

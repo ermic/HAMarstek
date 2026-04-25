@@ -1,0 +1,27 @@
+{% set timezone_offset = 2 %} {# Verander 2 naar je gewenste offset in uren #}
+
+{%- set forecast_list =
+state_attr('sensor.zonneplan_current_electricity_tariff', 'forecast')
+| sort(attribute='datetime') %}
+
+{%- set cheapest_forecast = forecast_list | sort(attribute='electricity_price_excl_tax') | first %}
+{%- set expensive_forecast = forecast_list | sort(attribute='electricity_price_excl_tax') | last %}
+
+{%- if cheapest_forecast %}
+{%- set cheapest_local_time = as_timestamp(strptime(cheapest_forecast.datetime, '%Y-%m-%dT%H:%M:%S.%fZ')) + timezone_offset * 3600 %}
+De goedkoopste tijd is {{ 'vandaag' if as_timestamp(utcnow())|timestamp_custom('%Y-%m-%d') == cheapest_local_time|timestamp_custom('%Y-%m-%d') else 'morgen' }} om {{ cheapest_local_time|timestamp_custom('%H') }} uur en kost €{{ "{:.2f}".format(cheapest_forecast.electricity_price_excl_tax|float/10000000) }}/kWh.
+{%- endif %}
+
+{%- set ns = namespace(current_day='') %}
+{%- for forecast in forecast_list %}
+{%- set forecast_local_time = as_timestamp(strptime(forecast.datetime, '%Y-%m-%dT%H:%M:%S.%fZ')) + timezone_offset * 3600 %}
+{%- set day = forecast_local_time | timestamp_custom('%Y-%m-%d') %}
+{%- if day != ns.current_day %}
+{%- set ns.current_day = day %}
+
+📅 {{ forecast_local_time | timestamp_custom('%A %d-%m') }}
+{%- endif %}
+{%- set price_incl = forecast.electricity_price / 10000000 %}
+{%- set price_excl = forecast.electricity_price_excl_tax / 10000000 %}
+• {{ forecast_local_time|timestamp_custom('%H:%M') }}    €{{ price_incl | round(2) }} (€{{ price_excl | round(2) }} excl.){% if price_excl < 0 %} ⚡ NEGATIEF{% endif %}{% if forecast == cheapest_forecast %} ⭐{% endif %}{% if forecast == expensive_forecast %} 🔴{% endif %}
+{%- endfor %}
