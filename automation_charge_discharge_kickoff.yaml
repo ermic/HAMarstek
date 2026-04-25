@@ -1,3 +1,4 @@
+id: marstek_charge_discharge_kickoff
 alias: Marstek charge/discharge daily kickoff
 description: >
   Geeft één laad-startschot en één ontlaad-startschot per dag, op basis
@@ -10,15 +11,14 @@ trigger:
     minutes: 0
 condition: []
 variables:
-  timezone_offset: 2
   charge_hour: >
-    {% set today_local = (as_timestamp(utcnow()) + timezone_offset * 3600) | timestamp_custom('%Y-%m-%d') %}
+    {% set today_local = now().strftime('%Y-%m-%d') %}
     {% set forecast = state_attr('sensor.zonneplan_current_electricity_tariff', 'forecast') or [] %}
     {% set ns = namespace(hours=[]) %}
     {% for f in forecast %}
-      {% set ts = as_timestamp(strptime(f.datetime, '%Y-%m-%dT%H:%M:%S.%fZ')) + timezone_offset * 3600 %}
-      {% set d = ts | timestamp_custom('%Y-%m-%d') %}
-      {% set h = ts | timestamp_custom('%H') | int %}
+      {% set ts_local = as_local(strptime(f.datetime, '%Y-%m-%dT%H:%M:%S.%fZ')) %}
+      {% set d = ts_local.strftime('%Y-%m-%d') %}
+      {% set h = ts_local.hour %}
       {% if d == today_local and h < 17 %}
         {% set ns.hours = ns.hours + [{'hour': h, 'price': f.electricity_price | float(0) / 10000000}] %}
       {% endif %}
@@ -52,13 +52,13 @@ variables:
     {% endif %}
     {{ rns.charge_hour }}
   discharge_hour: >
-    {% set today_local = (as_timestamp(utcnow()) + timezone_offset * 3600) | timestamp_custom('%Y-%m-%d') %}
+    {% set today_local = now().strftime('%Y-%m-%d') %}
     {% set forecast = state_attr('sensor.zonneplan_current_electricity_tariff', 'forecast') or [] %}
     {% set ns = namespace(hours=[]) %}
     {% for f in forecast %}
-      {% set ts = as_timestamp(strptime(f.datetime, '%Y-%m-%dT%H:%M:%S.%fZ')) + timezone_offset * 3600 %}
-      {% set d = ts | timestamp_custom('%Y-%m-%d') %}
-      {% set h = ts | timestamp_custom('%H') | int %}
+      {% set ts_local = as_local(strptime(f.datetime, '%Y-%m-%dT%H:%M:%S.%fZ')) %}
+      {% set d = ts_local.strftime('%Y-%m-%d') %}
+      {% set h = ts_local.hour %}
       {% if d == today_local and h >= 17 and h < 23 %}
         {% set ns.hours = ns.hours + [{'hour': h, 'price': f.electricity_price | float(0) / 10000000}] %}
       {% endif %}
