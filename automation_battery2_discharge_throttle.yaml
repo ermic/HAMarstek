@@ -1,0 +1,29 @@
+id: marstek_battery2_discharge_throttle
+alias: Marstek batterij 2 discharge throttle bij SoC < 50%
+description: >
+  Throttle batterij 2 ontlaadvermogen naar 200W zodra zijn SoC onder 50%
+  zakt tijdens een lopende ontlading. Voorkomt te diep ontladen van
+  batterij 2 terwijl batterij 1 op vol vermogen blijft.
+mode: single
+trigger:
+  - platform: numeric_state
+    entity_id: sensor.marstek_venus_modbus_2_battery_soc
+    below: 50
+condition:
+  - condition: state
+    entity_id: select.marstek_venus_modbus_force_mode_2
+    state: discharge
+  - condition: numeric_state
+    entity_id: number.marstek_venus_modbus_set_discharge_power_2
+    above: 200
+action:
+  - service: number.set_value
+    target:
+      entity_id: number.marstek_venus_modbus_set_discharge_power_2
+    data:
+      value: 200
+  - service: logbook.log
+    data:
+      name: Marstek
+      message: >
+        Batterij 2 throttle: SoC2 onder 50%, discharge_power_2 → 200W
