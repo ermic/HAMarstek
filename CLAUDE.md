@@ -50,6 +50,8 @@ Slimme sturing van een **Marstek VenusE 3.0** thuisbatterij via Home Assistant. 
 |---|---|
 | `automation_charge_discharge_kickoff.yaml` | Eenmalig per uur trigger: vuurt laad-startschot op goedkoopste uur (00-17u) en ontlaad-startschot op duurste uur (17-23u) van vandaag |
 | `automation_battery2_discharge_throttle.yaml` | Throttlet `set_discharge_power_2` naar 200W zodra batterij 2 SoC onder 50% zakt tijdens ontlading |
+| `automation_12_zonnepanelen_negatief_tarief.yaml` | Schakelt Envoy-productie 15 min voor negatief tarief uit, en 15 min voor positief tarief weer aan |
+| `panel_forecast.yaml` | Markdown-template dat per uur het Zonneplan-tarief toont (incl. negatief-markering) |
 | `input_helpers.yaml` | input_boolean en input_number helpers |
 | `dashboard.yaml` | HA dashboard met Zonneplan tariefgrafiek en batterijstatus |
 
