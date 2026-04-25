@@ -57,14 +57,18 @@ Het charge-uur algoritme is het meest complex (negatieve blokken, lengte-grens, 
 {% endif %}
 
 {# Stap 3: kies charge_hour #}
+{% set ans = namespace(items=[]) %}
+{% for b in bns.blocks %}
+  {% set ans.items = ans.items + [{'block': b, 'len': b | length, 'start': b[0].hour}] %}
+{% endfor %}
 {% set rns = namespace(charge_hour=none) %}
-{% if bns.blocks | length > 0 %}
+{% if ans.items | length > 0 %}
   {# Langste blok, bij gelijke lengte vroegste #}
-  {% set longest = bns.blocks | sort(attribute='0.hour') | sort(attribute='__len__', reverse=true) | first %}
-  {% if longest | length <= 5 %}
-    {% set rns.charge_hour = longest[0].hour %}
+  {% set best = ans.items | sort(attribute='start') | sort(attribute='len', reverse=true) | first %}
+  {% if best.len <= 5 %}
+    {% set rns.charge_hour = best.block[0].hour %}
   {% else %}
-    {% set rns.charge_hour = (longest | sort(attribute='price') | first).hour %}
+    {% set rns.charge_hour = (best.block | sort(attribute='price') | first).hour %}
   {% endif %}
 {% else %}
   {% if ns.hours | length > 0 %}
@@ -190,13 +194,17 @@ variables:
     {% if bns.current | length > 0 %}
       {% set bns.blocks = bns.blocks + [bns.current] %}
     {% endif %}
+    {% set ans = namespace(items=[]) %}
+    {% for b in bns.blocks %}
+      {% set ans.items = ans.items + [{'block': b, 'len': b | length, 'start': b[0].hour}] %}
+    {% endfor %}
     {% set rns = namespace(charge_hour=none) %}
-    {% if bns.blocks | length > 0 %}
-      {% set longest = bns.blocks | sort(attribute='0.hour') | sort(attribute='__len__', reverse=true) | first %}
-      {% if longest | length <= 5 %}
-        {% set rns.charge_hour = longest[0].hour %}
+    {% if ans.items | length > 0 %}
+      {% set best = ans.items | sort(attribute='start') | sort(attribute='len', reverse=true) | first %}
+      {% if best.len <= 5 %}
+        {% set rns.charge_hour = best.block[0].hour %}
       {% else %}
-        {% set rns.charge_hour = (longest | sort(attribute='price') | first).hour %}
+        {% set rns.charge_hour = (best.block | sort(attribute='price') | first).hour %}
       {% endif %}
     {% else %}
       {% if ns.hours | length > 0 %}
