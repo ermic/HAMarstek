@@ -1,7 +1,7 @@
 # HAMarstek – Home Assistant Batterij Automations
 
 ## Doel
-Slimme sturing van een **Marstek VenusE 3.0** thuisbatterij via Home Assistant. De automations houden nul op de meter aan, verkopen stroom bij hoge tarieven en laden goedkoop bij via zon of net.
+Slimme sturing van twee **Marstek VenusE** thuisbatterijen (2× 5 kWh) via Home Assistant. De automations geven één dagelijks laad-startschot op het goedkoopste tariefuur en één ontlaad-startschot op het duurste avonduur, plus een Envoy-toggle die zonnepanelen uitschakelt bij negatieve tarieven.
 
 ---
 
@@ -20,27 +20,24 @@ Slimme sturing van een **Marstek VenusE 3.0** thuisbatterij via Home Assistant. 
 
 | Entiteit | Omschrijving |
 |---|---|
-| `sensor.marstek_venus_modbus_battery_soc` | Laadstatus in % |
-| `sensor.marstek_ct_4de1_battery_e3e9_total_power` | Ruwe net-vermogen W (+ = import, - = export) |
-| `sensor.marstek_ct_4de1_battery_e3e9_phase_a_power` | Ruwe fase A vermogen W |
-| `input_number.marstek_net_power_smooth` | **Gladgemiddeld net-vermogen** (EMA, elke 10s bijgewerkt) — gebruik dit i.p.v. de ruwe CT-sensor in automations |
-| `sensor.zonneplan_current_tariff_group` | Huidig tarief: `low` / `normal` / `high` |
-| `sensor.zonneplan_current_electricity_tariff` | Tarief in €/kWh (incl. forecast in attributes) |
-| `sensor.sun_solar_elevation` | Zonnehoogte in graden — boven 0 = zon schijnt |
+| `sensor.marstek_venus_modbus_battery_soc` | Laadstatus batterij 1 in % |
+| `sensor.marstek_venus_modbus_2_battery_soc` | Laadstatus batterij 2 in % — triggert de discharge throttle als < 50 |
+| `sensor.zonneplan_current_electricity_tariff` | Tarief in €/kWh (incl. btw, met `forecast` attribute voor toekomstige uren) |
 | `sensor.envoy_122250110136_current_power_production` | Zonnepanelen productie in kW |
-| `sensor.marstek_venus_modbus_inverter_state` | Inverterstatus (bijv. `Bypass`) |
+| `sensor.marstek_ct_4de1_battery_e3e9_total_power` | Ruwe net-vermogen W (+ = import, - = export) — voor dashboard |
 
 ## Sleutel entiteiten voor sturing
 
 | Entiteit | Waarden |
 |---|---|
 | `switch.marstek_venus_modbus_rs485_control_mode` | Moet `on` zijn voor force_mode/charge/discharge |
-| `select.marstek_venus_modbus_force_mode` | `stop` / `charge` / `discharge` |
-| `select.marstek_venus_modbus_user_work_mode` | `manual` / `anti_feed` / `trade_mode` |
-| `number.marstek_venus_modbus_set_charge_power` | Laadvermogen in W (0–2500) |
-| `number.marstek_venus_modbus_set_discharge_power` | Ontlaadvermogen in W (0–2500) |
-| `number.marstek_venus_modbus_max_charge_power` | Max laadvermogen in W |
-| `number.marstek_venus_modbus_max_discharge_power` | Max ontlaadvermogen in W |
+| `select.marstek_venus_modbus_force_mode` | `stop` / `charge` / `discharge` (batterij 1) |
+| `select.marstek_venus_modbus_force_mode_2` | `stop` / `charge` / `discharge` (batterij 2) |
+| `number.marstek_venus_modbus_set_charge_power` | Laadvermogen batterij 1 in W (0–2500) |
+| `number.marstek_venus_modbus_set_charge_power_2` | Laadvermogen batterij 2 in W (0–2500) |
+| `number.marstek_venus_modbus_set_discharge_power` | Ontlaadvermogen batterij 1 in W (0–2500) |
+| `number.marstek_venus_modbus_set_discharge_power_2` | Ontlaadvermogen batterij 2 in W (0–2500) |
+| `switch.envoy_122250110136_production` | Aan/uit voor zonnepanelen Envoy-productie |
 
 ---
 
