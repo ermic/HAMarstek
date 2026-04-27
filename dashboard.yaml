@@ -6,42 +6,42 @@ views:
     cards:
       - type: vertical-stack
         cards:
-          - type: markdown
-            content: '## Batterij Status'
-          - type: gauge
-            entity: sensor.marstek_venus_modbus_battery_soc
-            name: Batterij laadstatus
-            unit: '%'
-            min: 0
-            max: 100
-            needle: true
-            severity:
-              red: 0
-              yellow: 20
-              green: 50
           - type: horizontal-stack
             cards:
-              - type: entity
-                entity: sensor.marstek_venus_modbus_stored_energy
-                name: Opgeslagen
-                icon: mdi:battery-high
-              - type: entity
-                entity: sensor.marstek_venus_modbus_battery_power
-                name: Batterijvermogen
-                icon: mdi:lightning-bolt
-              - type: entity
-                entity: sensor.marstek_venus_modbus_inverter_state
-                name: Inverterstatus
-                icon: mdi:state-machine
-      - type: history-graph
-        title: Vermogen (24u)
-        refresh_interval: 60
-        entities:
-          - entity: sensor.marstek_ct_4de1_battery_e3e9_phase_a_power
-            name: Net
-          - entity: sensor.marstek_venus_modbus_battery_power
-            name: Batterij
-        hours_to_show: 24
+              - type: gauge
+                entity: sensor.marstek_venus_modbus_battery_soc
+                name: Batterij laadstatus
+                unit: '%'
+                min: 0
+                max: 100
+                needle: true
+                severity:
+                  red: 0
+                  yellow: 20
+                  green: 50
+              - type: gauge
+                entity: sensor.marstek_venus_modbus_2_battery_soc
+                name: Batterij laadstatus
+                unit: '%'
+                min: 0
+                max: 100
+                needle: true
+                severity:
+                  green: 50
+                  yellow: 20
+                  red: 0
+          - type: horizontal-stack
+            cards:
+              - type: entities
+                entities:
+                  - entity: sensor.marstek_venus_modbus_stored_energy
+                  - entity: sensor.marstek_venus_modbus_battery_power
+                  - entity: sensor.marstek_venus_modbus_inverter_state
+              - type: entities
+                entities:
+                  - entity: sensor.marstek_venus_modbus_2_stored_energy
+                  - entity: sensor.marstek_venus_modbus_2_battery_power
+                  - entity: sensor.marstek_venus_modbus_2_inverter_state
       - type: vertical-stack
         cards:
           - type: markdown
@@ -49,20 +49,25 @@ views:
           - type: horizontal-stack
             cards:
               - type: entity
-                entity: sensor.marstek_ct_4de1_battery_e3e9_total_power
-                name: Net vermogen
-                icon: mdi:transmission-tower
+                entity: sensor.p1_meter_power
               - type: entity
                 entity: sensor.envoy_122250110136_current_power_production
                 name: Zonnepanelen
                 icon: mdi:solar-power
       - type: history-graph
-        title: Batterij SoC (24u)
-        hours_to_show: 24
+        title: Vermogen (24u)
         refresh_interval: 60
         entities:
-          - entity: sensor.marstek_venus_modbus_battery_soc
-            name: SoC %
+          - entity: sensor.envoy_122250110136_current_power_production
+          - entity: sensor.connect_energiemeter_electricity_production
+          - entity: sensor.marstek_ct_4de1_battery_e3e9_phase_a_power
+            name: Net
+          - entity: sensor.marstek_venus_modbus_battery_power
+            name: Batterij
+          - entity: sensor.marstek_venus_modbus_2_battery_power
+          - entity: sensor.p1_meter_power
+          - entity: sensor.zonneplan_usage
+        hours_to_show: 24
       - type: vertical-stack
         cards:
           - type: markdown
@@ -78,6 +83,14 @@ views:
               - type: entity
                 entity: sensor.marstek_venus_modbus_battery_voltage
                 name: Batterijspanning
+      - type: history-graph
+        title: Batterij SoC (24u)
+        hours_to_show: 24
+        refresh_interval: 60
+        entities:
+          - entity: sensor.marstek_venus_modbus_battery_soc
+            name: SoC %
+          - entity: sensor.marstek_venus_modbus_2_battery_soc
       - type: vertical-stack
         cards:
           - type: markdown
@@ -100,6 +113,22 @@ views:
                 entity: sensor.zonneplan_current_electricity_tariff
                 name: Huidig tarief
                 icon: mdi:cash
+          - type: horizontal-stack
+            cards:
+              - type: entity
+                entity: sensor.zonneplan_electricity_production_costs_today
+              - type: entity
+                entity: sensor.zonneplan_current_tariff_gas
+              - type: entity
+                entity: sensor.zonneplan_gas_consumption_today
+                state_color: false
+                name: gas cosumption
+          - type: horizontal-stack
+            cards:
+              - type: entity
+                entity: sensor.duux_1_50074_temperature
+              - type: entity
+                entity: climate.duux_1_50074_duux_1_50074
       - type: custom:plotly-graph
         hours_to_show: 30
         refresh_interval: 60
@@ -380,26 +409,57 @@ views:
             textoffset: 3
             textfont:
               color: $ex vars.now.c
+      - type: horizontal-stack
+        cards:
+          - type: vertical-stack
+            cards:
+              - type: entities
+                entities:
+                  - entity: switch.marstek_venus_modbus_rs485_control_mode
+                  - entity: select.marstek_venus_modbus_force_mode
+                    name: Forceer modus
+                  - entity: select.marstek_venus_modbus_user_work_mode
+                    name: Werkmodus
+                  - entity: number.marstek_venus_modbus_max_charge_power
+                    name: Max laadvermogen (W)
+                  - entity: number.marstek_venus_modbus_max_discharge_power
+                    name: Max ontlaadvermogen (W)
+                  - entity: number.marstek_venus_modbus_set_charge_power
+                    name: Huidig laadvermogen (W)
+                  - entity: number.marstek_venus_modbus_set_discharge_power
+                    name: Huidig ontlaadvermogen (W)
+                  - entity: number.marstek_venus_modbus_charge_to_soc
+                    name: Laden tot SoC (%)
+                show_header_toggle: false
+                state_color: false
+          - type: vertical-stack
+            cards:
+              - type: entities
+                entities:
+                  - entity: switch.marstek_venus_modbus_rs485_control_mode_2
+                  - entity: select.marstek_venus_modbus_force_mode_2
+                    name: Forceer modus
+                  - entity: select.marstek_venus_modbus_2_user_work_mode
+                    name: Werkmodus
+                  - entity: number.marstek_venus_modbus_max_charge_power_2
+                    name: Max laadvermogen (W)
+                  - entity: number.marstek_venus_modbus_max_discharge_power_2
+                    name: Max ontlaadvermogen (W)
+                  - entity: number.marstek_venus_modbus_set_charge_power_2
+                    name: Huidig laadvermogen (W)
+                  - entity: number.marstek_venus_modbus_set_discharge_power_2
+                    name: Huidig ontlaadvermogen (W)
+                  - entity: number.marstek_venus_modbus_charge_to_soc_2
+                    name: Laden tot SoC (%)
+                show_header_toggle: false
+                state_color: false
       - type: vertical-stack
         cards:
-          - type: markdown
-            content: '## Batterij Instellingen'
-          - type: entities
-            entities:
-              - entity: sensor.marstek_venuse_3_0_operating_mode
-              - entity: switch.marstek_venus_modbus_rs485_control_mode
-              - entity: select.marstek_venuse_3_0_operating_mode
-              - entity: select.marstek_venus_modbus_force_mode
-                name: Forceer modus
-              - entity: select.marstek_venus_modbus_user_work_mode
-                name: Werkmodus
-              - entity: number.marstek_venus_modbus_max_charge_power
-                name: Max laadvermogen (W)
-              - entity: number.marstek_venus_modbus_max_discharge_power
-                name: Max ontlaadvermogen (W)
-              - entity: number.marstek_venus_modbus_set_charge_power
-                name: Huidig laadvermogen (W)
-              - entity: number.marstek_venus_modbus_set_discharge_power
-                name: Huidig ontlaadvermogen (W)
-              - entity: number.marstek_venus_modbus_charge_to_soc
-                name: Laden tot SoC (%)
+          - type: horizontal-stack
+            cards:
+              - type: entity
+                entity: sensor.zonneplan_electricity_delivery_costs_today
+              - type: distribution
+                entities:
+                  - entity: sensor.zonneplan_electricity_delivery_costs_this_month
+                  - entity: sensor.zonneplan_electricity_production_costs_this_month

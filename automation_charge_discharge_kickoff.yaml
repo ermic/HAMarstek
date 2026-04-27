@@ -9,14 +9,13 @@ trigger:
   - platform: time_pattern
     hours: "/1"
     minutes: 0
-condition: []
 variables:
-  charge_hour: >
+  charge_hour: |
     {% set today_local = now().strftime('%Y-%m-%d') %}
     {% set forecast = state_attr('sensor.zonneplan_current_electricity_tariff', 'forecast') or [] %}
     {% set ns = namespace(hours=[]) %}
     {% for f in forecast %}
-      {% set ts_local = as_local(strptime(f.datetime, '%Y-%m-%dT%H:%M:%S.%fZ')) %}
+      {% set ts_local = as_local(as_datetime(f.datetime)) %}
       {% set d = ts_local.strftime('%Y-%m-%d') %}
       {% set h = ts_local.hour %}
       {% if d == today_local and h < 17 %}
@@ -55,12 +54,12 @@ variables:
       {% endif %}
     {% endif %}
     {{ rns.charge_hour }}
-  discharge_hour: >
+  discharge_hour: |
     {% set today_local = now().strftime('%Y-%m-%d') %}
     {% set forecast = state_attr('sensor.zonneplan_current_electricity_tariff', 'forecast') or [] %}
     {% set ns = namespace(hours=[]) %}
     {% for f in forecast %}
-      {% set ts_local = as_local(strptime(f.datetime, '%Y-%m-%dT%H:%M:%S.%fZ')) %}
+      {% set ts_local = as_local(as_datetime(f.datetime)) %}
       {% set d = ts_local.strftime('%Y-%m-%d') %}
       {% set h = ts_local.hour %}
       {% if d == today_local and h >= 17 and h < 23 %}
@@ -74,10 +73,17 @@ variables:
     {% endif %}
   current_hour: "{{ now().hour }}"
 action:
+  - service: logbook.log
+    data:
+      name: Marstek debug
+      message: |
+        {% set first = (state_attr('sensor.zonneplan_current_electricity_tariff', 'forecast') or [{}]) | first %}
+        now={{ now() }} | current_hour={{ current_hour }} | charge_hour={{ charge_hour }} | discharge_hour={{ discharge_hour }} | first.datetime={{ first.datetime }} | parsed={{ as_datetime(first.datetime) }} | as_local={{ as_local(as_datetime(first.datetime)) }} | local_hour={{ as_local(as_datetime(first.datetime)).hour }}
   - choose:
       - alias: Laad-startschot
         conditions:
-          - "{{ charge_hour | int(-1) == current_hour | int }}"
+          - condition: template
+            value_template: "{{ charge_hour | int(-1) == current_hour | int }}"
         sequence:
           - service: switch.turn_on
             target:
@@ -106,7 +112,8 @@ action:
               message: "Laad-startschot gevuurd op uur {{ current_hour }}"
       - alias: Ontlaad-startschot
         conditions:
-          - "{{ discharge_hour | int(-1) == current_hour | int }}"
+          - condition: template
+            value_template: "{{ discharge_hour | int(-1) == current_hour | int }}"
         sequence:
           - service: switch.turn_on
             target:
@@ -134,3 +141,8 @@ action:
             data:
               name: Marstek
               message: "Ontlaad-startschot gevuurd op uur {{ current_hour }}"
+    default:
+      - service: logbook.log
+        data:
+          name: Marstek debug
+          message: "Geen match: current_hour={{ current_hour }}, charge_hour={{ charge_hour }}, discharge_hour={{ discharge_hour }}"

@@ -16,13 +16,19 @@ action:
         {% set ns = namespace(price=none) %}
         {% if forecast %}
           {% for f in forecast | sort(attribute='datetime') %}
-            {% set f_ts = as_timestamp(strptime(f.datetime, '%Y-%m-%dT%H:%M:%S.%fZ')) %}
+            {% set f_ts = as_timestamp(as_datetime(f.datetime)) %}
             {% if f_ts <= target_ts %}
               {% set ns.price = f.electricity_price | float(0) / 10000000 %}
             {% endif %}
           {% endfor %}
         {% endif %}
         {{ ns.price }}
+  - service: logbook.log
+    data:
+      name: Zonnepanelen debug
+      message: |
+        {% set first = (state_attr('sensor.zonneplan_current_electricity_tariff', 'forecast') or [{}]) | first %}
+        now={{ now() }} | target_ts={{ target_ts }} | target_local={{ target_ts | int | timestamp_local }} | future_price={{ future_price }} | first.datetime={{ first.datetime }} | first parsed={{ as_datetime(first.datetime) }} | first as_local={{ as_local(as_datetime(first.datetime)) }} | switch_state={{ states('switch.envoy_122250110136_production') }}
   - choose:
       - alias: Geen forecast beschikbaar - niets doen
         conditions:
@@ -54,3 +60,8 @@ action:
               name: Zonnepanelen
               message: >
                 Ingeschakeld: tarief over 15 min €{{ future_price | float(0) | round(3) }}/kWh
+    default:
+      - service: logbook.log
+        data:
+          name: Zonnepanelen debug
+          message: "Geen actie: future_price={{ future_price }}, switch_state={{ states('switch.envoy_122250110136_production') }}, target_local={{ target_ts | int | timestamp_local }}"
