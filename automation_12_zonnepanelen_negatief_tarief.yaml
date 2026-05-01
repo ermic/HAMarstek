@@ -1,67 +1,93 @@
 alias: Zonnepanelen uit bij negatief tarief
 description: >
-  Schakelt de Envoy-productieschakelaar 15 minuten voor een negatief tarief
-  uit, en 15 minuten voor terugkeer naar een positief tarief weer aan.
-  Draait elk kwartier en kijkt 15 minuten vooruit in de Zonneplan-forecast.
-mode: single
-trigger:
-  - platform: time_pattern
-    minutes: "/15"
-condition: []
-action:
+  Schakelt de Envoy-productieschakelaar 45 minuten voor een negatief tarief uit
+  (omvormers hebben bijna een uur nodig om daadwerkelijk te stoppen), en 15
+  minuten voor terugkeer naar een positief tarief weer aan. Draait elk kwartier.
+triggers:
+  - minutes: /15
+    trigger: time_pattern
+conditions: []
+actions:
   - variables:
-      target_ts: "{{ as_timestamp(utcnow()) + 900 }}"
-      future_price: >
-        {% set forecast = state_attr('sensor.zonneplan_current_electricity_tariff', 'forecast') %}
-        {% set ns = namespace(price=none) %}
-        {% if forecast %}
+      target_ts_off: "{{ as_timestamp(utcnow()) + 2700 }}"
+      target_ts_on: "{{ as_timestamp(utcnow()) + 900 }}"
+      future_price_off: >
+        {% set forecast =
+        state_attr('sensor.zonneplan_current_electricity_tariff', 'forecast') %}
+        {% set ns = namespace(price=none) %} {% if forecast %}
           {% for f in forecast | sort(attribute='datetime') %}
             {% set f_ts = as_timestamp(as_datetime(f.datetime)) %}
-            {% if f_ts <= target_ts %}
+            {% if f_ts <= target_ts_off %}
               {% set ns.price = f.electricity_price | float(0) / 10000000 %}
             {% endif %}
           {% endfor %}
-        {% endif %}
-        {{ ns.price }}
-  - service: logbook.log
-    data:
+        {% endif %} {{ ns.price }}
+      future_price_on: >
+        {% set forecast =
+        state_attr('sensor.zonneplan_current_electricity_tariff', 'forecast') %}
+        {% set ns = namespace(price=none) %} {% if forecast %}
+          {% for f in forecast | sort(attribute='datetime') %}
+            {% set f_ts = as_timestamp(as_datetime(f.datetime)) %}
+            {% if f_ts <= target_ts_on %}
+              {% set ns.price = f.electricity_price | float(0) / 10000000 %}
+            {% endif %}
+          {% endfor %}
+        {% endif %} {{ ns.price }}
+  - data:
       name: Zonnepanelen debug
-      message: |
-        {% set first = (state_attr('sensor.zonneplan_current_electricity_tariff', 'forecast') or [{}]) | first %}
-        now={{ now() }} | target_ts={{ target_ts }} | target_local={{ target_ts | int | timestamp_local }} | future_price={{ future_price }} | first.datetime={{ first.datetime }} | first parsed={{ as_datetime(first.datetime) }} | first as_local={{ as_local(as_datetime(first.datetime)) }} | switch_state={{ states('switch.envoy_122250110136_production') }}
+      message: >
+        {% set first =
+        (state_attr('sensor.zonneplan_current_electricity_tariff', 'forecast')
+        or [{}]) | first %}
+
+        now={{ now() }} | target_off_local={{ target_ts_off | int |
+        timestamp_local }} | future_price_off={{ future_price_off }} |
+        target_on_local={{ target_ts_on | int | timestamp_local }} |
+        future_price_on={{ future_price_on }} | first.datetime={{
+        first.datetime }} | switch_state={{
+        states('switch.envoy_122250110136_production') }}
+    action: logbook.log
   - choose:
       - alias: Geen forecast beschikbaar - niets doen
         conditions:
-          - "{{ future_price in (none, 'None', '') }}"
+          - "{{ future_price_off in (none, 'None', '') and future_price_on in (none, 'None', '') }}"
         sequence: []
       - alias: Tarief wordt negatief - zonnepanelen uit
         conditions:
-          - "{{ future_price | float(0) < 0 }}"
+          - "{{ future_price_off not in (none, 'None', '') }}"
+          - "{{ future_price_off | float(0) < 0 }}"
           - "{{ is_state('switch.envoy_122250110136_production', 'on') }}"
         sequence:
-          - service: switch.turn_off
-            target:
+          - target:
               entity_id: switch.envoy_122250110136_production
-          - service: logbook.log
-            data:
+            action: switch.turn_off
+          - data:
               name: Zonnepanelen
               message: >
-                Uitgeschakeld: tarief over 15 min €{{ future_price | float(0) | round(3) }}/kWh
+                Uitgeschakeld: tarief over 45 min €{{ future_price_off |
+                float(0) | round(3) }}/kWh
+            action: logbook.log
       - alias: Tarief is positief - zonnepanelen aan
         conditions:
-          - "{{ future_price | float(0) >= 0 }}"
+          - "{{ future_price_on not in (none, 'None', '') }}"
+          - "{{ future_price_on | float(0) >= 0 }}"
           - "{{ is_state('switch.envoy_122250110136_production', 'off') }}"
         sequence:
-          - service: switch.turn_on
-            target:
+          - target:
               entity_id: switch.envoy_122250110136_production
-          - service: logbook.log
-            data:
+            action: switch.turn_on
+          - data:
               name: Zonnepanelen
               message: >
-                Ingeschakeld: tarief over 15 min €{{ future_price | float(0) | round(3) }}/kWh
+                Ingeschakeld: tarief over 15 min €{{ future_price_on | float(0)
+                | round(3) }}/kWh
+            action: logbook.log
     default:
-      - service: logbook.log
-        data:
+      - data:
           name: Zonnepanelen debug
-          message: "Geen actie: future_price={{ future_price }}, switch_state={{ states('switch.envoy_122250110136_production') }}, target_local={{ target_ts | int | timestamp_local }}"
+          message: >-
+            Geen actie: future_price_off={{ future_price_off }},
+            future_price_on={{ future_price_on }}, switch_state={{
+            states('switch.envoy_122250110136_production') }}
+        action: logbook.log
+mode: single
