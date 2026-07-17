@@ -20,7 +20,7 @@ views:
                   yellow: 20
                   green: 50
               - type: gauge
-                entity: sensor.marstek_venus_modbus_2_battery_soc
+                entity: sensor.marstek_venus_modbus_battery_soc_2
                 name: Batterij laadstatus
                 unit: '%'
                 min: 0
@@ -90,7 +90,7 @@ views:
         entities:
           - entity: sensor.marstek_venus_modbus_battery_soc
             name: SoC %
-          - entity: sensor.marstek_venus_modbus_2_battery_soc
+          - entity: sensor.marstek_venus_modbus_battery_soc_2
       - type: vertical-stack
         cards:
           - type: markdown

@@ -136,7 +136,7 @@ action:
               entity_id: number.marstek_venus_modbus_set_discharge_power_2
             data:
               value: >
-                {{ 200 if states('sensor.marstek_venus_modbus_2_battery_soc') | float(0) < 50 else 2500 }}
+                {{ 200 if states('sensor.marstek_venus_modbus_battery_soc_2') | float(0) < 50 else 2500 }}
           - service: logbook.log
             data:
               name: Marstek
