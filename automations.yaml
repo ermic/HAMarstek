@@ -1,0 +1,441 @@
+- id: '1777152447151'
+  alias: Zonnepanelen uit bij negatief tarief
+  description: 'Schakelt de Envoy-productieschakelaar 45 minuten voor een negatief
+    tarief uit (omvormers hebben bijna een uur nodig om daadwerkelijk te stoppen),
+    en 15 minuten voor terugkeer naar een positief tarief weer aan. Draait elk kwartier.
+
+    '
+  triggers:
+  - minutes: /15
+    trigger: time_pattern
+  conditions: []
+  actions:
+  - variables:
+      target_ts_off: '{{ as_timestamp(utcnow()) + 2700 }}'
+      target_ts_on: '{{ as_timestamp(utcnow()) + 900 }}'
+      future_price_off: "{% set forecast = state_attr('sensor.zonneplan_current_electricity_tariff',
+        'forecast') %} {% set ns = namespace(price=none) %} {% if forecast %}\n  {%
+        for f in forecast | sort(attribute='datetime') %}\n    {% set f_ts = as_timestamp(as_datetime(f.datetime))
+        %}\n    {% if f_ts <= target_ts_off %}\n      {% set ns.price = f.electricity_price
+        | float(0) / 10000000 %}\n    {% endif %}\n  {% endfor %}\n{% endif %} {{
+        ns.price }}\n"
+      future_price_on: "{% set forecast = state_attr('sensor.zonneplan_current_electricity_tariff',
+        'forecast') %} {% set ns = namespace(price=none) %} {% if forecast %}\n  {%
+        for f in forecast | sort(attribute='datetime') %}\n    {% set f_ts = as_timestamp(as_datetime(f.datetime))
+        %}\n    {% if f_ts <= target_ts_on %}\n      {% set ns.price = f.electricity_price
+        | float(0) / 10000000 %}\n    {% endif %}\n  {% endfor %}\n{% endif %} {{
+        ns.price }}\n"
+  - data:
+      name: Zonnepanelen debug
+      message: '{% set first = (state_attr(''sensor.zonneplan_current_electricity_tariff'',
+        ''forecast'') or [{}]) | first %}
+
+        now={{ now() }} | target_off_local={{ target_ts_off | int | timestamp_local
+        }} | future_price_off={{ future_price_off }} | target_on_local={{ target_ts_on
+        | int | timestamp_local }} | future_price_on={{ future_price_on }} | first.datetime={{
+        first.datetime }} | switch_state={{ states(''switch.envoy_122250110136_production'')
+        }}
+
+        '
+    action: logbook.log
+  - choose:
+    - alias: Geen forecast beschikbaar - niets doen
+      conditions:
+      - '{{ future_price_off in (none, ''None'', '''') and future_price_on in (none,
+        ''None'', '''') }}'
+      sequence: []
+    - alias: Tarief wordt negatief - zonnepanelen uit
+      conditions:
+      - '{{ future_price_off not in (none, ''None'', '''') }}'
+      - '{{ future_price_off | float(0) < 0 }}'
+      - '{{ is_state(''switch.envoy_122250110136_production'', ''on'') }}'
+      sequence:
+      - target:
+          entity_id: switch.envoy_122250110136_production
+        action: switch.turn_off
+      - data:
+          name: Zonnepanelen
+          message: 'Uitgeschakeld: tarief over 45 min €{{ future_price_off | float(0)
+            | round(3) }}/kWh
+
+            '
+        action: logbook.log
+    - alias: Tarief is positief - zonnepanelen aan
+      conditions:
+      - '{{ future_price_on not in (none, ''None'', '''') }}'
+      - '{{ future_price_on | float(0) >= 0 }}'
+      - '{{ is_state(''switch.envoy_122250110136_production'', ''off'') }}'
+      sequence:
+      - target:
+          entity_id: switch.envoy_122250110136_production
+        action: switch.turn_on
+      - data:
+          name: Zonnepanelen
+          message: 'Ingeschakeld: tarief over 15 min €{{ future_price_on | float(0)
+            | round(3) }}/kWh
+
+            '
+        action: logbook.log
+    default:
+    - data:
+        name: Zonnepanelen debug
+        message: 'Geen actie: future_price_off={{ future_price_off }}, future_price_on={{
+          future_price_on }}, switch_state={{ states(''switch.envoy_122250110136_production'')
+          }}'
+      action: logbook.log
+  mode: single
+- id: marstek_charge_discharge_kickoff
+  alias: Marstek charge/discharge daily kickoff
+  description: 'Geeft één laad-startschot en één ontlaad-startschot per dag, op basis
+    van de goedkoopste/duurste uren in de Zonneplan-forecast voor vandaag. Laden in
+    venster 00:00-17:00, ontladen in 17:00-23:00.
+
+    '
+  triggers:
+  - hours: /1
+    minutes: 0
+    trigger: time_pattern
+  actions:
+  - data:
+      name: Marstek debug
+      message: '{% set first = (state_attr(''sensor.zonneplan_current_electricity_tariff'',
+        ''forecast'') or [{}]) | first %}
+
+        now={{ now() }} | current_hour={{ current_hour }} | charge_hour={{ charge_hour
+        }} | discharge_hour={{ discharge_hour }} | first.datetime={{ first.datetime
+        }} | parsed={{ as_datetime(first.datetime) }} | as_local={{ as_local(as_datetime(first.datetime))
+        }} | local_hour={{ as_local(as_datetime(first.datetime)).hour }}
+
+        '
+    action: logbook.log
+  - choose:
+    - alias: Laad-startschot
+      conditions:
+      - condition: template
+        value_template: '{{ charge_hour | int(-1) == current_hour | int }}'
+      sequence:
+      - target:
+          entity_id: switch.marstek_venus_modbus_rs485_control_mode
+        action: switch.turn_on
+      - target:
+          entity_id:
+          - select.marstek_venus_modbus_force_mode
+          - select.marstek_venus_modbus_force_mode_2
+        data:
+          option: charge
+        action: select.select_option
+      - delay: 00:00:05
+      - target:
+          entity_id: number.marstek_venus_modbus_set_charge_power
+        data:
+          value: 2500
+        action: number.set_value
+      - target:
+          entity_id: number.marstek_venus_modbus_set_charge_power_2
+        data:
+          value: 2500
+        action: number.set_value
+      - data:
+          name: Marstek
+          message: Laad-startschot gevuurd op uur {{ current_hour }}
+        action: logbook.log
+    - alias: Ontlaad-startschot
+      conditions:
+      - condition: template
+        value_template: '{{ discharge_hour | int(-1) == current_hour | int }}'
+      sequence:
+      - target:
+          entity_id: switch.marstek_venus_modbus_rs485_control_mode
+        action: switch.turn_on
+      - target:
+          entity_id:
+          - select.marstek_venus_modbus_force_mode
+          - select.marstek_venus_modbus_force_mode_2
+        data:
+          option: discharge
+        action: select.select_option
+      - delay: 00:00:05
+      - target:
+          entity_id: number.marstek_venus_modbus_set_discharge_power
+        data:
+          value: 2500
+        action: number.set_value
+      - target:
+          entity_id: number.marstek_venus_modbus_set_discharge_power_2
+        data:
+          value: '{{ 200 if states(''sensor.marstek_venus_modbus_battery_soc_2'')
+            | float(0) < 50 else 2500 }}
+
+            '
+        action: number.set_value
+      - data:
+          name: Marstek
+          message: Ontlaad-startschot gevuurd op uur {{ current_hour }}
+        action: logbook.log
+    default:
+    - data:
+        name: Marstek debug
+        message: 'Geen match: current_hour={{ current_hour }}, charge_hour={{ charge_hour
+          }}, discharge_hour={{ discharge_hour }}'
+      action: logbook.log
+  mode: single
+  variables:
+    charge_hour: "{% set today_local = now().strftime('%Y-%m-%d') %}\n{% set forecast
+      = state_attr('sensor.zonneplan_current_electricity_tariff', 'forecast') or []
+      %}\n{% set ns = namespace(hours=[]) %}\n{% for f in forecast %}\n  {% set ts_local
+      = as_local(as_datetime(f.datetime)) %}\n  {% set d = ts_local.strftime('%Y-%m-%d')
+      %}\n  {% set h = ts_local.hour %}\n  {% if d == today_local and h < 17 %}\n
+      \   {% set ns.hours = ns.hours + [{'hour': h, 'price': f.electricity_price |
+      float(0) / 10000000}] %}\n  {% endif %}\n{% endfor %}\n{% set sorted_hours =
+      ns.hours | sort(attribute='hour') | list %}\n{% set n = sorted_hours | length
+      %}\n{% set wns = namespace(windows=[]) %}\n{% for i in range(n - 1) %}\n  {%
+      if sorted_hours[i + 1].hour == sorted_hours[i].hour + 1 %}\n    {% set wns.windows
+      = wns.windows + [{'start': sorted_hours[i].hour, 'avg': (sorted_hours[i].price
+      + sorted_hours[i + 1].price) / 2}] %}\n  {% endif %}\n{% endfor %}\n{% set rns
+      = namespace(charge_hour=none) %}\n{% if wns.windows | length > 0 %}\n  {% set
+      rns.charge_hour = (wns.windows | sort(attribute='avg') | first).start %}\n{%
+      elif n > 0 %}\n  {% set rns.charge_hour = (sorted_hours | sort(attribute='price')
+      | first).hour %}\n{% endif %}\n{{ rns.charge_hour }}\n"
+    discharge_hour: "{% set today_local = now().strftime('%Y-%m-%d') %}\n{% set forecast
+      = state_attr('sensor.zonneplan_current_electricity_tariff', 'forecast') or []
+      %}\n{% set ns = namespace(hours=[]) %}\n{% for f in forecast %}\n  {% set ts_local
+      = as_local(as_datetime(f.datetime)) %}\n  {% set d = ts_local.strftime('%Y-%m-%d')
+      %}\n  {% set h = ts_local.hour %}\n  {% if d == today_local and h >= 17 and
+      h < 23 %}\n    {% set ns.hours = ns.hours + [{'hour': h, 'price': f.electricity_price
+      | float(0) / 10000000}] %}\n  {% endif %}\n{% endfor %}\n{% if ns.hours | length
+      > 0 %}\n  {{ (ns.hours | sort(attribute='price', reverse=true) | first).hour
+      }}\n{% else %}\n  {{ none }}\n{% endif %}\n"
+    current_hour: '{{ now().hour }}'
+- id: marstek_battery2_discharge_throttle
+  alias: Marstek batterij 2 discharge throttle bij SoC < 50%
+  description: 'Throttle batterij 2 ontlaadvermogen naar 200W zodra zijn SoC onder
+    50% zakt tijdens een lopende ontlading. Voorkomt te diep ontladen van batterij
+    2 terwijl batterij 1 op vol vermogen blijft.
+
+    '
+  triggers:
+  - entity_id:
+    - sensor.marstek_venus_modbus_battery_soc_2
+    below: 50
+    trigger: numeric_state
+  conditions:
+  - condition: state
+    entity_id: select.marstek_venus_modbus_force_mode_2
+    state: discharge
+  - condition: numeric_state
+    entity_id: number.marstek_venus_modbus_set_discharge_power_2
+    above: 200
+  actions:
+  - target:
+      entity_id: number.marstek_venus_modbus_set_discharge_power_2
+    data:
+      value: 200
+    action: number.set_value
+  - data:
+      name: Marstek
+      message: 'Batterij 2 throttle: SoC2 onder 50%, discharge_power_2 → 200W
+
+        '
+    action: logbook.log
+  mode: single
+- id: marstek_battery_discharge_throttle
+  alias: Marstek batterij 1 discharge throttle bij SoC < 16%
+  description: 'Throttle batterij ontlaadvermogen naar 200W zodra zijn SoC onder 16%
+    zakt tijdens een lopende ontlading.
+
+    '
+  triggers:
+  - entity_id: sensor.marstek_venus_modbus_battery_soc
+    below: 16
+    trigger: numeric_state
+  conditions:
+  - condition: state
+    entity_id: select.marstek_venus_modbus_force_mode
+    state: discharge
+  - condition: numeric_state
+    entity_id: number.marstek_venus_modbus_set_discharge_power
+    above: 200
+  actions:
+  - target:
+      entity_id: number.marstek_venus_modbus_set_discharge_power
+    data:
+      value: 200
+    action: number.set_value
+  - data:
+      name: Marstek
+      message: 'Batterij throttle: SoC onder 16%, discharge_power → 200W
+
+        '
+    action: logbook.log
+  mode: single
+- id: marstek_battery1_charge_throttle
+  alias: Marstek batterij 1 charge throttle bij hoge SoC
+  description: 'Verlaagt het laadvermogen van batterij 1 trapsgewijs naarmate SoC
+    stijgt (≥90% → 1000W, ≥95% → 500W, ≥97% → 200W). Beschermt de cellen tegen hoge
+    stroom in het bovenste deel van de SoC-curve.
+
+    '
+  triggers:
+  - entity_id: sensor.marstek_venus_modbus_battery_soc
+    above: 90
+    id: soc_90
+    trigger: numeric_state
+  - entity_id: sensor.marstek_venus_modbus_battery_soc
+    above: 95
+    id: soc_95
+    trigger: numeric_state
+  - entity_id: sensor.marstek_venus_modbus_battery_soc
+    above: 97
+    id: soc_97
+    trigger: numeric_state
+  conditions:
+  - condition: state
+    entity_id: select.marstek_venus_modbus_force_mode
+    state: charge
+  actions:
+  - choose:
+    - alias: SoC ≥ 97 → 200W
+      conditions:
+      - condition: trigger
+        id: soc_97
+      - condition: numeric_state
+        entity_id: number.marstek_venus_modbus_set_charge_power
+        above: 200
+      sequence:
+      - target:
+          entity_id: number.marstek_venus_modbus_set_charge_power
+        data:
+          value: 200
+        action: number.set_value
+      - data:
+          name: Marstek
+          message: 'Batterij 1 charge throttle: SoC ≥ 97%, charge_power → 200W'
+        action: logbook.log
+    - alias: SoC ≥ 95 → 500W
+      conditions:
+      - condition: trigger
+        id: soc_95
+      - condition: numeric_state
+        entity_id: number.marstek_venus_modbus_set_charge_power
+        above: 500
+      sequence:
+      - target:
+          entity_id: number.marstek_venus_modbus_set_charge_power
+        data:
+          value: 500
+        action: number.set_value
+      - data:
+          name: Marstek
+          message: 'Batterij 1 charge throttle: SoC ≥ 95%, charge_power → 500W'
+        action: logbook.log
+    - alias: SoC ≥ 90 → 1000W
+      conditions:
+      - condition: trigger
+        id: soc_90
+      - condition: numeric_state
+        entity_id: number.marstek_venus_modbus_set_charge_power
+        above: 1000
+      sequence:
+      - target:
+          entity_id: number.marstek_venus_modbus_set_charge_power
+        data:
+          value: 1000
+        action: number.set_value
+      - data:
+          name: Marstek
+          message: 'Batterij 1 charge throttle: SoC ≥ 90%, charge_power → 1000W'
+        action: logbook.log
+  mode: single
+- id: marstek_battery2_charge_throttle
+  alias: Marstek batterij 2 charge throttle bij hoge SoC
+  description: 'Verlaagt het laadvermogen van batterij 2 trapsgewijs naarmate SoC
+    stijgt (≥90% → 1000W, ≥95% → 500W, ≥97% → 200W). Beschermt de cellen tegen hoge
+    stroom in het bovenste deel van de SoC-curve.
+
+    '
+  triggers:
+  - entity_id: sensor.marstek_venus_modbus_battery_soc_2
+    above: 90
+    id: soc_90
+    trigger: numeric_state
+  - entity_id: sensor.marstek_venus_modbus_battery_soc_2
+    above: 95
+    id: soc_95
+    trigger: numeric_state
+  - entity_id: sensor.marstek_venus_modbus_battery_soc_2
+    above: 97
+    id: soc_97
+    trigger: numeric_state
+  conditions:
+  - condition: state
+    entity_id: select.marstek_venus_modbus_force_mode_2
+    state: charge
+  actions:
+  - choose:
+    - alias: SoC ≥ 97 → 200W
+      conditions:
+      - condition: trigger
+        id: soc_97
+      - condition: numeric_state
+        entity_id: number.marstek_venus_modbus_set_charge_power_2
+        above: 200
+      sequence:
+      - target:
+          entity_id: number.marstek_venus_modbus_set_charge_power_2
+        data:
+          value: 200
+        action: number.set_value
+      - data:
+          name: Marstek
+          message: 'Batterij 2 charge throttle: SoC ≥ 97%, charge_power_2 → 200W'
+        action: logbook.log
+    - alias: SoC ≥ 95 → 500W
+      conditions:
+      - condition: trigger
+        id: soc_95
+      - condition: numeric_state
+        entity_id: number.marstek_venus_modbus_set_charge_power_2
+        above: 500
+      sequence:
+      - target:
+          entity_id: number.marstek_venus_modbus_set_charge_power_2
+        data:
+          value: 500
+        action: number.set_value
+      - data:
+          name: Marstek
+          message: 'Batterij 2 charge throttle: SoC ≥ 95%, charge_power_2 → 500W'
+        action: logbook.log
+    - alias: SoC ≥ 90 → 1000W
+      conditions:
+      - condition: trigger
+        id: soc_90
+      - condition: numeric_state
+        entity_id: number.marstek_venus_modbus_set_charge_power_2
+        above: 1000
+      sequence:
+      - target:
+          entity_id: number.marstek_venus_modbus_set_charge_power_2
+        data:
+          value: 1000
+        action: number.set_value
+      - data:
+          name: Marstek
+          message: 'Batterij 2 charge throttle: SoC ≥ 90%, charge_power_2 → 1000W'
+        action: logbook.log
+  mode: single
+- id: '1784295274878'
+  alias: Marstek RS485 keepalive
+  description: Houdt de RS485-controlemodus actief zodat de accu niet terugvalt
+  triggers:
+  - trigger: time_pattern
+    seconds: /20
+  conditions:
+  - condition: state
+    entity_id: input_boolean.input_boolean_marstek_besturing_2
+    state: 'on'
+  actions:
+  - action: switch.turn_on
+    target:
+      entity_id: switch.marstek_venus_modbus_rs485_control_mode_2
+  mode: single

@@ -7,7 +7,7 @@ description: >
 mode: single
 trigger:
   - platform: numeric_state
-    entity_id: sensor.marstek_venus_modbus_2_battery_soc
+    entity_id: sensor.marstek_venus_modbus_battery_soc_2
     below: 50
 condition:
   - condition: state

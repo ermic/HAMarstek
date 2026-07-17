@@ -21,7 +21,7 @@ Slimme sturing van twee **Marstek VenusE** thuisbatterijen (2× 5 kWh) via Home 
 | Entiteit | Omschrijving |
 |---|---|
 | `sensor.marstek_venus_modbus_battery_soc` | Laadstatus batterij 1 in % |
-| `sensor.marstek_venus_modbus_2_battery_soc` | Laadstatus batterij 2 in % — triggert de discharge throttle als < 50 |
+| `sensor.marstek_venus_modbus_battery_soc_2` | Laadstatus batterij 2 in % — triggert de discharge throttle als < 50 |
 | `sensor.zonneplan_current_electricity_tariff` | Tarief in €/kWh (incl. btw, met `forecast` attribute voor toekomstige uren) |
 | `sensor.envoy_122250110136_current_power_production` | Zonnepanelen productie in kW |
 | `sensor.marstek_ct_4de1_battery_e3e9_total_power` | Ruwe net-vermogen W (+ = import, - = export) — voor dashboard |
