@@ -7,8 +7,10 @@ description: >
   en vuurt op het begin daarvan.
 
   Werkt zowel op uur- als kwartierprijzen: leest bij voorkeur de kwartiersensor
-  (price_per_quarter_hour) en valt terug op de uur-sensor zolang die nog leeg is.
-  Granulariteit-agnostisch dankzij slot-berekening (minuut-van-de-dag) i.p.v. hele uren.
+  (forecast-key price_per_quarter_hour, rauwe API-velden start_date /
+  price_tax_included.amount) en valt terug op de legacy uur-sensor (velden
+  datetime / electricity_price) zolang de kwartierdata nog leeg is. De veld-extractie
+  is structuur-agnostisch. Granulariteit-agnostisch dankzij slot (minuut-van-de-dag).
 mode: single
 trigger:
   - platform: time_pattern
@@ -23,9 +25,12 @@ variables:
     {% set today = now().strftime('%Y-%m-%d') %}
     {% set ns = namespace(rows=[]) %}
     {% for f in forecast %}
-      {% set t = as_local(as_datetime(f.datetime)) %}
-      {% if t.strftime('%Y-%m-%d') == today and (t.hour * 60 + t.minute) < 1020 %}
-        {% set ns.rows = ns.rows + [{'slot': t.hour * 60 + t.minute, 'price': f.electricity_price | float(0)}] %}
+      {% set raw_dt = f.start_date if f.start_date is defined else f.datetime %}
+      {% set price = (f.price_tax_included.amount if f.price_tax_included is defined else f.electricity_price) | float(0) %}
+      {% set t = as_local(as_datetime(raw_dt)) %}
+      {% set slot = t.hour * 60 + t.minute %}
+      {% if t.strftime('%Y-%m-%d') == today and slot < 1020 %}
+        {% set ns.rows = ns.rows + [{'slot': slot, 'price': price}] %}
       {% endif %}
     {% endfor %}
     {% set rows = ns.rows | sort(attribute='slot') | list %}
@@ -63,10 +68,12 @@ variables:
     {% set today = now().strftime('%Y-%m-%d') %}
     {% set ns = namespace(rows=[]) %}
     {% for f in forecast %}
-      {% set t = as_local(as_datetime(f.datetime)) %}
+      {% set raw_dt = f.start_date if f.start_date is defined else f.datetime %}
+      {% set price = (f.price_tax_included.amount if f.price_tax_included is defined else f.electricity_price) | float(0) %}
+      {% set t = as_local(as_datetime(raw_dt)) %}
       {% set slot = t.hour * 60 + t.minute %}
       {% if t.strftime('%Y-%m-%d') == today and slot >= 1020 and slot < 1380 %}
-        {% set ns.rows = ns.rows + [{'slot': slot, 'price': f.electricity_price | float(0)}] %}
+        {% set ns.rows = ns.rows + [{'slot': slot, 'price': price}] %}
       {% endif %}
     {% endfor %}
     {% set rows = ns.rows | sort(attribute='slot') | list %}
