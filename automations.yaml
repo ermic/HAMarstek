@@ -86,33 +86,114 @@
   mode: single
 - id: marstek_charge_discharge_kickoff
   alias: Marstek charge/discharge daily kickoff
-  description: 'Geeft één laad-startschot en één ontlaad-startschot per dag, op basis
-    van de goedkoopste/duurste uren in de Zonneplan-forecast voor vandaag. Laden in
-    venster 00:00-17:00, ontladen in 17:00-23:00.
-
-    '
+  description: >-
+    Geeft een laad-startschot en een ontlaad-startschot per dag: kiest het
+    goedkoopste (laden, 00:00-17:00) resp. duurste (ontladen, 17:00-23:00)
+    aaneengesloten prijsvenster van ~2 uur uit de Zonneplan-forecast voor
+    vandaag en vuurt op het begin daarvan. Werkt op uur- en kwartierprijzen:
+    leest bij voorkeur de kwartiersensor en valt terug op de uur-sensor zolang
+    die nog leeg is.
+  mode: single
   triggers:
-  - hours: /1
-    minutes: 0
+  - minutes: /15
     trigger: time_pattern
+  variables:
+    window_minutes: 120
+    charge_slot: |
+      {% set q = state_attr('sensor.zonneplan_current_quarter_hourly_electricity_tariff', 'forecast') %}
+      {% set forecast = q if q else (state_attr('sensor.zonneplan_current_electricity_tariff', 'forecast') or []) %}
+      {% set today = now().strftime('%Y-%m-%d') %}
+      {% set ns = namespace(rows=[]) %}
+      {% for f in forecast %}
+        {% set t = as_local(as_datetime(f.datetime)) %}
+        {% if t.strftime('%Y-%m-%d') == today and (t.hour * 60 + t.minute) < 1020 %}
+          {% set ns.rows = ns.rows + [{'slot': t.hour * 60 + t.minute, 'price': f.electricity_price | float(0)}] %}
+        {% endif %}
+      {% endfor %}
+      {% set rows = ns.rows | sort(attribute='slot') | list %}
+      {% set n = rows | length %}
+      {% if n == 0 %}
+        {{ none }}
+      {% else %}
+        {% set sns = namespace(step=0) %}
+        {% for i in range(n - 1) %}
+          {% set gap = rows[i + 1].slot - rows[i].slot %}
+          {% if gap > 0 and (sns.step == 0 or gap < sns.step) %}{% set sns.step = gap %}{% endif %}
+        {% endfor %}
+        {% set step = sns.step if sns.step > 0 else 60 %}
+        {% set need = (window_minutes / step) | round(0, 'ceil') | int %}
+        {% set need = 1 if need < 1 else need %}
+        {% set last_start = [n - need, 0] | max %}
+        {% set bns = namespace(start=rows[0].slot, avg=none) %}
+        {% for i in range(0, last_start + 1) %}
+          {% set wns = namespace(sum=0, cnt=0) %}
+          {% for j in range(i, [i + need, n] | min) %}
+            {% set wns.sum = wns.sum + rows[j].price %}
+            {% set wns.cnt = wns.cnt + 1 %}
+          {% endfor %}
+          {% set avg = wns.sum / wns.cnt %}
+          {% if bns.avg is none or avg < bns.avg %}
+            {% set bns.avg = avg %}
+            {% set bns.start = rows[i].slot %}
+          {% endif %}
+        {% endfor %}
+        {{ bns.start }}
+      {% endif %}
+    discharge_slot: |
+      {% set q = state_attr('sensor.zonneplan_current_quarter_hourly_electricity_tariff', 'forecast') %}
+      {% set forecast = q if q else (state_attr('sensor.zonneplan_current_electricity_tariff', 'forecast') or []) %}
+      {% set today = now().strftime('%Y-%m-%d') %}
+      {% set ns = namespace(rows=[]) %}
+      {% for f in forecast %}
+        {% set t = as_local(as_datetime(f.datetime)) %}
+        {% set slot = t.hour * 60 + t.minute %}
+        {% if t.strftime('%Y-%m-%d') == today and slot >= 1020 and slot < 1380 %}
+          {% set ns.rows = ns.rows + [{'slot': slot, 'price': f.electricity_price | float(0)}] %}
+        {% endif %}
+      {% endfor %}
+      {% set rows = ns.rows | sort(attribute='slot') | list %}
+      {% set n = rows | length %}
+      {% if n == 0 %}
+        {{ none }}
+      {% else %}
+        {% set sns = namespace(step=0) %}
+        {% for i in range(n - 1) %}
+          {% set gap = rows[i + 1].slot - rows[i].slot %}
+          {% if gap > 0 and (sns.step == 0 or gap < sns.step) %}{% set sns.step = gap %}{% endif %}
+        {% endfor %}
+        {% set step = sns.step if sns.step > 0 else 60 %}
+        {% set need = (window_minutes / step) | round(0, 'ceil') | int %}
+        {% set need = 1 if need < 1 else need %}
+        {% set last_start = [n - need, 0] | max %}
+        {% set bns = namespace(start=rows[0].slot, avg=none) %}
+        {% for i in range(0, last_start + 1) %}
+          {% set wns = namespace(sum=0, cnt=0) %}
+          {% for j in range(i, [i + need, n] | min) %}
+            {% set wns.sum = wns.sum + rows[j].price %}
+            {% set wns.cnt = wns.cnt + 1 %}
+          {% endfor %}
+          {% set avg = wns.sum / wns.cnt %}
+          {% if bns.avg is none or avg > bns.avg %}
+            {% set bns.avg = avg %}
+            {% set bns.start = rows[i].slot %}
+          {% endif %}
+        {% endfor %}
+        {{ bns.start }}
+      {% endif %}
+    current_slot: '{{ now().hour * 60 + (now().minute // 15) * 15 }}'
   actions:
   - data:
       name: Marstek debug
-      message: '{% set first = (state_attr(''sensor.zonneplan_current_electricity_tariff'',
-        ''forecast'') or [{}]) | first %}
-
-        now={{ now() }} | current_hour={{ current_hour }} | charge_hour={{ charge_hour
-        }} | discharge_hour={{ discharge_hour }} | first.datetime={{ first.datetime
-        }} | parsed={{ as_datetime(first.datetime) }} | as_local={{ as_local(as_datetime(first.datetime))
-        }} | local_hour={{ as_local(as_datetime(first.datetime)).hour }}
-
-        '
+      message: >
+        {% set q = state_attr('sensor.zonneplan_current_quarter_hourly_electricity_tariff', 'forecast') %}
+        now={{ now() }} | current_slot={{ current_slot }} | charge_slot={{ charge_slot }} |
+        discharge_slot={{ discharge_slot }} | bron={{ 'kwartier' if q else 'uur (legacy fallback)' }}
     action: logbook.log
   - choose:
     - alias: Laad-startschot
       conditions:
       - condition: template
-        value_template: '{{ charge_hour | int(-1) == current_hour | int }}'
+        value_template: '{{ charge_slot | int(-1) == current_slot | int }}'
       sequence:
       - target:
           entity_id: switch.marstek_venus_modbus_rs485_control_mode
@@ -137,12 +218,12 @@
         action: number.set_value
       - data:
           name: Marstek
-          message: Laad-startschot gevuurd op uur {{ current_hour }}
+          message: "Laad-startschot gevuurd op slot {{ '%02d:%02d' % (current_slot | int // 60, current_slot | int % 60) }}"
         action: logbook.log
     - alias: Ontlaad-startschot
       conditions:
       - condition: template
-        value_template: '{{ discharge_hour | int(-1) == current_hour | int }}'
+        value_template: '{{ discharge_slot | int(-1) == current_slot | int }}'
       sequence:
       - target:
           entity_id: switch.marstek_venus_modbus_rs485_control_mode
@@ -163,49 +244,17 @@
       - target:
           entity_id: number.marstek_venus_modbus_set_discharge_power_2
         data:
-          value: '{{ 200 if states(''sensor.marstek_venus_modbus_battery_soc_2'')
-            | float(0) < 50 else 2500 }}
-
-            '
+          value: "{{ 200 if states('sensor.marstek_venus_modbus_battery_soc_2') | float(0) < 50 else 2500 }}"
         action: number.set_value
       - data:
           name: Marstek
-          message: Ontlaad-startschot gevuurd op uur {{ current_hour }}
+          message: "Ontlaad-startschot gevuurd op slot {{ '%02d:%02d' % (current_slot | int // 60, current_slot | int % 60) }}"
         action: logbook.log
     default:
     - data:
         name: Marstek debug
-        message: 'Geen match: current_hour={{ current_hour }}, charge_hour={{ charge_hour
-          }}, discharge_hour={{ discharge_hour }}'
+        message: 'Geen match: current_slot={{ current_slot }}, charge_slot={{ charge_slot }}, discharge_slot={{ discharge_slot }}'
       action: logbook.log
-  mode: single
-  variables:
-    charge_hour: "{% set today_local = now().strftime('%Y-%m-%d') %}\n{% set forecast
-      = state_attr('sensor.zonneplan_current_electricity_tariff', 'forecast') or []
-      %}\n{% set ns = namespace(hours=[]) %}\n{% for f in forecast %}\n  {% set ts_local
-      = as_local(as_datetime(f.datetime)) %}\n  {% set d = ts_local.strftime('%Y-%m-%d')
-      %}\n  {% set h = ts_local.hour %}\n  {% if d == today_local and h < 17 %}\n
-      \   {% set ns.hours = ns.hours + [{'hour': h, 'price': f.electricity_price |
-      float(0) / 10000000}] %}\n  {% endif %}\n{% endfor %}\n{% set sorted_hours =
-      ns.hours | sort(attribute='hour') | list %}\n{% set n = sorted_hours | length
-      %}\n{% set wns = namespace(windows=[]) %}\n{% for i in range(n - 1) %}\n  {%
-      if sorted_hours[i + 1].hour == sorted_hours[i].hour + 1 %}\n    {% set wns.windows
-      = wns.windows + [{'start': sorted_hours[i].hour, 'avg': (sorted_hours[i].price
-      + sorted_hours[i + 1].price) / 2}] %}\n  {% endif %}\n{% endfor %}\n{% set rns
-      = namespace(charge_hour=none) %}\n{% if wns.windows | length > 0 %}\n  {% set
-      rns.charge_hour = (wns.windows | sort(attribute='avg') | first).start %}\n{%
-      elif n > 0 %}\n  {% set rns.charge_hour = (sorted_hours | sort(attribute='price')
-      | first).hour %}\n{% endif %}\n{{ rns.charge_hour }}\n"
-    discharge_hour: "{% set today_local = now().strftime('%Y-%m-%d') %}\n{% set forecast
-      = state_attr('sensor.zonneplan_current_electricity_tariff', 'forecast') or []
-      %}\n{% set ns = namespace(hours=[]) %}\n{% for f in forecast %}\n  {% set ts_local
-      = as_local(as_datetime(f.datetime)) %}\n  {% set d = ts_local.strftime('%Y-%m-%d')
-      %}\n  {% set h = ts_local.hour %}\n  {% if d == today_local and h >= 17 and
-      h < 23 %}\n    {% set ns.hours = ns.hours + [{'hour': h, 'price': f.electricity_price
-      | float(0) / 10000000}] %}\n  {% endif %}\n{% endfor %}\n{% if ns.hours | length
-      > 0 %}\n  {{ (ns.hours | sort(attribute='price', reverse=true) | first).hour
-      }}\n{% else %}\n  {{ none }}\n{% endif %}\n"
-    current_hour: '{{ now().hour }}'
 - id: marstek_battery2_discharge_throttle
   alias: Marstek batterij 2 discharge throttle bij SoC < 50%
   description: 'Throttle batterij 2 ontlaadvermogen naar 200W zodra zijn SoC onder
